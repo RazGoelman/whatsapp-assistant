@@ -1,0 +1,37 @@
+# Progress Log
+
+## Completed (v2 – Mobile-First Setup)
+- [x] US-001: הקמת פרויקט בסיסי ותשתית שרת
+- [x] US-002: דף הגדרה ראשונית בדפדפן (Mobile Web Setup)
+- [x] US-003: סריקת QR ל-WhatsApp מדף הווב
+- [x] US-004: Onboarding דרך WhatsApp – בחירת שם לסוכן
+- [x] US-005: זיהוי פנייה לסוכן לפי שם
+- [x] US-006: חיבור ל-Claude API לעיבוד הודעות
+- [x] US-007: זיהוי כוונות (Intents) מהודעות
+- [x] US-008: חיבור ל-Google Calendar API
+- [x] US-009: יצירת אירוע ביומן מהודעת WhatsApp
+- [x] US-010: עדכון אירוע קיים ביומן
+- [x] US-011: מחיקת אירוע מהיומן
+- [x] US-012: יצירת פגישה עם Google Meet
+- [x] US-013: תמלול הודעות קוליות
+- [x] US-014: מערכת תזכורות
+- [x] US-015: סיכום יומי אוטומטי
+- [x] US-016: יצירת הודעות/תשובות חכמות
+- [x] US-017: טיפול בשגיאות ולוגים
+
+## Key Changes v1 → v2
+- הוסר setup.js (terminal) → הוחלף בדף Web Setup מותאם לנייד
+- QR code מוצג כתמונה בדף ווב (לא ASCII בטרמינל)
+- בחירת שם דרך WhatsApp (onboarding) במקום בטרמינל
+- Express server מופעל תמיד – דף setup זמין גם לפני שה-config מלא
+- waitForSetup() – השרת ממתין למילוי הגדרות דרך הווב
+- סיסמה אקראית מוצגת בלוגים לגישה לדף ה-setup
+
+## Learnings
+- Google Calendar API מסתנכרן אוטומטית ל-Android. ב-iPhone צריך הגדרה חד-פעמית.
+- whatsapp-web.js שומר Session ב-LocalAuth – סריקת QR רק פעם אחת.
+- QR code חייב להיות תמונה (qrcode npm) ולא ASCII כשמציגים בדפדפן נייד.
+- font-size: 16px על input מונע auto-zoom באייפון.
+- הודעות קוליות ב-WhatsApp מגיעות כ-type: 'ptt' (push to talk).
+- Claude מחזיר JSON אמין כשה-System Prompt מגדיר את הפורמט בצורה ברורה.
+- conferenceData עם hangoutsMeet יוצר Google Meet link אוטומטית.

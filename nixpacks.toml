@@ -1,0 +1,5 @@
+[phases.setup]
+aptPkgs = ["chromium", "fonts-freefont-ttf"]
+
+[variables]
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
