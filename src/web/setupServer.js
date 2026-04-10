@@ -1,23 +1,69 @@
 const express = require('express');
+const crypto = require('crypto');
 const { google } = require('googleapis');
 const { config, saveToEnv, isSetupComplete } = require('../config');
 const logger = require('../services/logger');
 
 const router = express.Router();
 
-// === Middleware: הגנה בסיסמה ===
-function requireAuth(req, res, next) {
-  const { password } = req.query;
-  if (password === config.setupPassword) {
-    return next();
+// 🔒 Session token — נוצר פעם אחת בזמן ריצה
+const SESSION_TOKEN = crypto.randomBytes(32).toString('hex');
+const SESSION_COOKIE = 'setup_session';
+const MAX_LOGIN_ATTEMPTS = 5;
+let loginAttempts = new Map(); // IP -> { count, lastAttempt }
+
+// === Middleware: Security Headers ===
+router.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
+// === Rate Limiting ===
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry) return true;
+  // ניקוי אחרי 15 דקות
+  if (now - entry.lastAttempt > 15 * 60 * 1000) {
+    loginAttempts.delete(ip);
+    return true;
   }
-  res.status(401).send(page('🔒 נדרשת סיסמה', `
-    <p>הוסף <code>?password=YOUR_PASSWORD</code> לכתובת.</p>
-    <p>הסיסמה מופיעה בלוגים של השרת בהפעלה.</p>
-  `));
+  return entry.count < MAX_LOGIN_ATTEMPTS;
 }
 
-// === Helper: עטיפת HTML מותאם לנייד ===
+function recordLoginAttempt(ip) {
+  const entry = loginAttempts.get(ip) || { count: 0, lastAttempt: 0 };
+  entry.count++;
+  entry.lastAttempt = Date.now();
+  loginAttempts.set(ip, entry);
+}
+
+// === Middleware: Cookie-based Auth ===
+function requireAuth(req, res, next) {
+  const cookie = parseCookies(req)[SESSION_COOKIE];
+  if (cookie === SESSION_TOKEN) {
+    return next();
+  }
+  res.redirect('/setup/login');
+}
+
+function parseCookies(req) {
+  const cookies = {};
+  const header = req.headers.cookie || '';
+  header.split(';').forEach(c => {
+    const [key, val] = c.trim().split('=');
+    if (key && val) cookies[key] = val;
+  });
+  return cookies;
+}
+
+// === Helper: HTML מותאם לנייד ===
 function page(title, body) {
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
@@ -34,44 +80,19 @@ function page(title, body) {
       padding: 20px;
       min-height: 100vh;
     }
-    .container {
-      max-width: 480px;
-      margin: 0 auto;
-    }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 20px;
-      color: #25D366;
-    }
+    .container { max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin-bottom: 20px; color: #25D366; }
     h2 { font-size: 1.2rem; margin: 20px 0 10px; color: #fff; }
-    label {
-      display: block;
-      margin: 14px 0 6px;
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
+    label { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 0.95rem; }
     input[type="text"], input[type="password"], input[type="tel"], select {
-      width: 100%;
-      padding: 14px;
-      border: 1px solid #333;
-      border-radius: 10px;
-      background: #1a2a44;
-      color: #fff;
-      font-size: 16px; /* מונע zoom באייפון */
+      width: 100%; padding: 14px; border: 1px solid #333;
+      border-radius: 10px; background: #1a2a44; color: #fff; font-size: 16px;
     }
     input:focus { outline: 2px solid #25D366; border-color: #25D366; }
     .btn {
-      display: block;
-      width: 100%;
-      padding: 16px;
-      margin: 20px 0;
-      background: #25D366;
-      color: #fff;
-      border: none;
-      border-radius: 12px;
-      font-size: 1.1rem;
-      font-weight: 700;
-      cursor: pointer;
+      display: block; width: 100%; padding: 16px; margin: 20px 0;
+      background: #25D366; color: #fff; border: none; border-radius: 12px;
+      font-size: 1.1rem; font-weight: 700; cursor: pointer; text-align: center; text-decoration: none;
     }
     .btn:active { background: #1da851; }
     .btn-secondary { background: #2a3f5f; }
@@ -95,23 +116,62 @@ function page(title, body) {
 </html>`;
 }
 
+// === דף Login ===
+router.get('/login', (req, res) => {
+  res.send(page('🔒 כניסה לדף ההגדרות', `
+    <p>הזן את הסיסמה שמופיעה בלוגים של השרת:</p>
+    <form method="POST" action="/setup/login">
+      <label>סיסמה</label>
+      <input type="password" name="password" placeholder="הזן סיסמה" required autofocus>
+      <button type="submit" class="btn">🔓 כניסה</button>
+    </form>
+  `));
+});
+
+router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
+  const ip = req.ip || req.connection.remoteAddress;
+
+  if (!checkRateLimit(ip)) {
+    return res.status(429).send(page('🚫 חסימה זמנית', `
+      <div class="error">יותר מדי ניסיונות. נסה שוב בעוד 15 דקות.</div>
+    `));
+  }
+
+  const { password } = req.body;
+  if (password === config.setupPassword) {
+    // מנקה ניסיונות
+    loginAttempts.delete(ip);
+    // שומר cookie מאובטח
+    res.setHeader('Set-Cookie',
+      `${SESSION_COOKIE}=${SESSION_TOKEN}; Path=/setup; HttpOnly; SameSite=Strict; Max-Age=3600`
+    );
+    return res.redirect('/setup');
+  }
+
+  recordLoginAttempt(ip);
+  const remaining = MAX_LOGIN_ATTEMPTS - (loginAttempts.get(ip)?.count || 0);
+  res.status(401).send(page('🔒 סיסמה שגויה', `
+    <div class="error">סיסמה לא נכונה. נותרו ${remaining} ניסיונות.</div>
+    <a href="/setup/login" class="btn">← נסה שוב</a>
+  `));
+});
+
 // === דף ראשי – Setup ===
 router.get('/', requireAuth, (req, res) => {
-  const pw = req.query.password;
   const complete = isSetupComplete();
 
   res.send(page('🤖 הגדרת העוזר האישי', `
-    ${complete ? '<div class="success">✅ ההגדרות הבסיסיות כבר הושלמו. ניתן לעדכן.</div>' : ''}
+    ${complete ? '<div class="success">✅ ההגדרות הבסיסיות הושלמו. ניתן לעדכן.</div>' : ''}
 
     <div class="step">
       <span class="step-num">שלב 1</span> – הזנת פרטים ו-API Keys
     </div>
 
-    <form method="POST" action="/setup/save?password=${pw}">
+    <form method="POST" action="/setup/save">
       <label>📱 מספר טלפון (בפורמט בינלאומי)</label>
       <input type="tel" name="phone" placeholder="972501234567" 
-             value="${config.userPhoneNumber}" required>
-      <div class="hint">ללא + ולללא מקפים. למשל: 972501234567</div>
+             value="${config.userPhoneNumber}" required pattern="[0-9]{10,15}">
+      <div class="hint">ללא + וללא מקפים. למשל: 972501234567</div>
 
       <label>🔑 Anthropic API Key (Claude)</label>
       <input type="password" name="anthropic_key" placeholder="sk-ant-..."
@@ -123,7 +183,7 @@ router.get('/', requireAuth, (req, res) => {
 
       <label>📅 Google Client ID</label>
       <input type="text" name="google_client_id" placeholder="xxx.apps.googleusercontent.com"
-             value="${config.google.clientId}" required>
+             value="${sanitizeForHtml(config.google.clientId)}" required>
 
       <label>📅 Google Client Secret</label>
       <input type="password" name="google_client_secret" 
@@ -141,67 +201,65 @@ router.get('/', requireAuth, (req, res) => {
     </form>
 
     <div class="step">
-      <span class="step-num">שלב 2</span> – <a href="/setup/google?password=${pw}">חבר Google Calendar</a>
+      <span class="step-num">שלב 2</span> – <a href="/setup/google">חבר Google Calendar</a>
     </div>
 
     <div class="step">
-      <span class="step-num">שלב 3</span> – <a href="/setup/whatsapp?password=${pw}">חבר WhatsApp</a>
+      <span class="step-num">שלב 3</span> – <a href="/setup/whatsapp">חבר WhatsApp</a>
     </div>
   `));
 });
 
 // === שמירת הגדרות ===
 router.post('/save', requireAuth, express.urlencoded({ extended: true }), (req, res) => {
-  const pw = req.query.password;
   const { phone, anthropic_key, openai_key, google_client_id, google_client_secret, timezone } = req.body;
 
   try {
-    if (phone) saveToEnv('USER_PHONE_NUMBER', phone);
-    if (anthropic_key && !anthropic_key.includes('•')) saveToEnv('ANTHROPIC_API_KEY', anthropic_key);
-    if (openai_key && !openai_key.includes('•')) saveToEnv('OPENAI_API_KEY', openai_key);
-    if (google_client_id) saveToEnv('GOOGLE_CLIENT_ID', google_client_id);
-    if (google_client_secret && !google_client_secret.includes('•')) saveToEnv('GOOGLE_CLIENT_SECRET', google_client_secret);
-    if (timezone) saveToEnv('TIMEZONE', timezone);
+    // 🔒 Input validation
+    if (phone && !/^[0-9]{10,15}$/.test(phone)) {
+      throw new Error('מספר טלפון לא תקין');
+    }
+    const allowedTimezones = ['Asia/Jerusalem', 'Europe/London', 'America/New_York', 'America/Los_Angeles'];
+    if (timezone && !allowedTimezones.includes(timezone)) {
+      throw new Error('אזור זמן לא תקין');
+    }
 
-    // עדכון config ב-runtime
-    if (phone) config.userPhoneNumber = phone;
-    if (anthropic_key && !anthropic_key.includes('•')) config.anthropicApiKey = anthropic_key;
-    if (openai_key && !openai_key.includes('•')) config.openaiApiKey = openai_key;
-    if (google_client_id) config.google.clientId = google_client_id;
-    if (google_client_secret && !google_client_secret.includes('•')) config.google.clientSecret = google_client_secret;
-    if (timezone) config.timezone = timezone;
+    if (phone) { saveToEnv('USER_PHONE_NUMBER', phone); config.userPhoneNumber = phone; }
+    if (anthropic_key && !anthropic_key.includes('•')) { saveToEnv('ANTHROPIC_API_KEY', anthropic_key); config.anthropicApiKey = anthropic_key; }
+    if (openai_key && !openai_key.includes('•')) { saveToEnv('OPENAI_API_KEY', openai_key); config.openaiApiKey = openai_key; }
+    if (google_client_id) { saveToEnv('GOOGLE_CLIENT_ID', google_client_id); config.google.clientId = google_client_id; }
+    if (google_client_secret && !google_client_secret.includes('•')) { saveToEnv('GOOGLE_CLIENT_SECRET', google_client_secret); config.google.clientSecret = google_client_secret; }
+    if (timezone) { saveToEnv('TIMEZONE', timezone); config.timezone = timezone; }
 
     logger.info('הגדרות נשמרו מדף ה-Setup.');
 
     res.send(page('✅ נשמר!', `
       <div class="success">ההגדרות נשמרו בהצלחה!</div>
-      <a href="/setup/google?password=${pw}" class="btn">שלב הבא: חבר Google Calendar →</a>
-      <a href="/setup?password=${pw}" class="btn btn-secondary">← חזור להגדרות</a>
+      <a href="/setup/google" class="btn">שלב הבא: חבר Google Calendar →</a>
+      <a href="/setup" class="btn btn-secondary">← חזור להגדרות</a>
     `));
   } catch (err) {
+    logger.error('שגיאה בשמירת הגדרות: ' + err.message);
     res.send(page('❌ שגיאה', `
-      <div class="error">שגיאה בשמירה: ${err.message}</div>
-      <a href="/setup?password=${pw}" class="btn">← חזור</a>
+      <div class="error">שגיאה בשמירה. בדוק את הנתונים ונסה שוב.</div>
+      <a href="/setup" class="btn">← חזור</a>
     `));
   }
 });
 
 // === Google OAuth ===
 router.get('/google', requireAuth, (req, res) => {
-  const pw = req.query.password;
-
   if (!config.google.clientId || !config.google.clientSecret) {
     return res.send(page('📅 Google Calendar', `
-      <div class="error">חסרים Google Client ID ו-Secret. <a href="/setup?password=${pw}">חזור והזן אותם קודם</a>.</div>
+      <div class="error">חסרים Google Client ID ו-Secret. <a href="/setup">חזור והזן אותם קודם</a>.</div>
     `));
   }
 
   const hasToken = !!config.google.refreshToken;
-
   const oauth2Client = new google.auth.OAuth2(
     config.google.clientId,
     config.google.clientSecret,
-    `${req.protocol}://${req.get('host')}/setup/google/callback?password=${pw}`
+    `${req.protocol}://${req.get('host')}/setup/google/callback`
   );
 
   const authUrl = oauth2Client.generateAuthUrl({
@@ -214,18 +272,17 @@ router.get('/google', requireAuth, (req, res) => {
     ${hasToken ? '<div class="success">✅ Google Calendar כבר מחובר! אפשר לחבר מחדש.</div>' : ''}
     <p>לחץ על הכפתור כדי לאשר גישה ליומן Google שלך:</p>
     <a href="${authUrl}" class="btn">🔗 חבר Google Calendar</a>
-    <a href="/setup?password=${pw}" class="btn btn-secondary">← חזור</a>
+    <a href="/setup" class="btn btn-secondary">← חזור</a>
   `));
 });
 
 router.get('/google/callback', requireAuth, async (req, res) => {
-  const pw = req.query.password;
   const { code } = req.query;
 
   if (!code) {
     return res.send(page('❌ שגיאה', `
       <div class="error">לא התקבל קוד אישור מ-Google.</div>
-      <a href="/setup/google?password=${pw}" class="btn">← נסה שוב</a>
+      <a href="/setup/google" class="btn">← נסה שוב</a>
     `));
   }
 
@@ -233,28 +290,26 @@ router.get('/google/callback', requireAuth, async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       config.google.clientId,
       config.google.clientSecret,
-      `${req.protocol}://${req.get('host')}/setup/google/callback?password=${pw}`
+      `${req.protocol}://${req.get('host')}/setup/google/callback`
     );
 
     const { tokens } = await oauth2Client.getToken(code);
-    const refreshToken = tokens.refresh_token;
-
-    if (refreshToken) {
-      saveToEnv('GOOGLE_REFRESH_TOKEN', refreshToken);
-      config.google.refreshToken = refreshToken;
+    if (tokens.refresh_token) {
+      saveToEnv('GOOGLE_REFRESH_TOKEN', tokens.refresh_token);
+      config.google.refreshToken = tokens.refresh_token;
     }
 
     logger.info('Google Calendar מחובר מדף ה-Setup.');
-
     res.send(page('✅ Google Calendar מחובר!', `
-      <div class="success">Google Calendar חובר בהצלחה! האירועים יופיעו ביומן הטלפון.</div>
-      <a href="/setup/whatsapp?password=${pw}" class="btn">שלב הבא: חבר WhatsApp →</a>
-      <a href="/setup?password=${pw}" class="btn btn-secondary">← חזור להגדרות</a>
+      <div class="success">Google Calendar חובר בהצלחה!</div>
+      <a href="/setup/whatsapp" class="btn">שלב הבא: חבר WhatsApp →</a>
+      <a href="/setup" class="btn btn-secondary">← חזור להגדרות</a>
     `));
   } catch (err) {
+    logger.error('שגיאה בחיבור Google: ' + err.message);
     res.send(page('❌ שגיאה', `
-      <div class="error">שגיאה בחיבור: ${err.message}</div>
-      <a href="/setup/google?password=${pw}" class="btn">← נסה שוב</a>
+      <div class="error">שגיאה בחיבור ל-Google. נסה שוב.</div>
+      <a href="/setup/google" class="btn">← נסה שוב</a>
     `));
   }
 });
@@ -263,34 +318,27 @@ router.get('/google/callback', requireAuth, async (req, res) => {
 let qrDataUrl = null;
 let whatsappReady = false;
 
-function setQrData(dataUrl) {
-  qrDataUrl = dataUrl;
-}
-
-function setWhatsAppReady(ready) {
-  whatsappReady = ready;
-}
+function setQrData(dataUrl) { qrDataUrl = dataUrl; }
+function setWhatsAppReady(ready) { whatsappReady = ready; }
 
 router.get('/whatsapp', requireAuth, (req, res) => {
-  const pw = req.query.password;
-
   if (whatsappReady) {
     return res.send(page('✅ WhatsApp מחובר!', `
       <div class="success">
         WhatsApp מחובר בהצלחה!<br>
         ${config.agentName
-          ? `שם הסוכן: <strong>${config.agentName}</strong>. שלח לו הודעה ב-WhatsApp!`
+          ? 'שם הסוכן: <strong>' + sanitizeForHtml(config.agentName) + '</strong>. שלח לו הודעה!'
           : 'בדוק את ה-WhatsApp – הסוכן שלח לך הודעה לבחירת שם!'}
       </div>
-      <a href="/setup?password=${pw}" class="btn btn-secondary">← חזור להגדרות</a>
+      <a href="/setup" class="btn btn-secondary">← חזור להגדרות</a>
     `));
   }
 
   res.send(page('📱 חיבור WhatsApp', `
     <div class="qr-container">
       ${qrDataUrl
-        ? `<img src="${qrDataUrl}" alt="QR Code" id="qrImage">`
-        : '<p>⏳ ממתין ל-QR code... רענן את הדף בעוד כמה שניות.</p>'}
+        ? '<img src="' + qrDataUrl + '" alt="QR Code" id="qrImage">'
+        : '<p>ממתין ל-QR code... רענן את הדף בעוד כמה שניות.</p>'}
     </div>
 
     <div class="step">
@@ -301,21 +349,15 @@ router.get('/whatsapp', requireAuth, (req, res) => {
     </div>
 
     <div class="step" style="margin-top: 12px;">
-      <strong>⚠️ ה-WhatsApp באותו טלפון?</strong><br>
-      פתח את הקישור הזה במחשב או בטלפון אחר, או השתמש ב-
-      <a href="/setup/whatsapp/pair?password=${pw}">קוד pairing</a> במקום.
+      <strong>ה-WhatsApp באותו טלפון?</strong><br>
+      פתח את הקישור הזה ממכשיר אחר כדי לסרוק.
     </div>
 
-    <script>
-      // רענון אוטומטי כל 5 שניות עד שמחובר
-      setTimeout(() => location.reload(), 5000);
-    </script>
-
-    <a href="/setup?password=${pw}" class="btn btn-secondary">← חזור</a>
+    <script>setTimeout(function() { location.reload(); }, 5000);</script>
+    <a href="/setup" class="btn btn-secondary">← חזור</a>
   `));
 });
 
-// === WhatsApp Status API (for polling) ===
 router.get('/whatsapp/status', requireAuth, (req, res) => {
   res.json({
     connected: whatsappReady,
@@ -323,5 +365,11 @@ router.get('/whatsapp/status', requireAuth, (req, res) => {
     agentName: config.agentName || null,
   });
 });
+
+// 🔒 Sanitize output to prevent XSS
+function sanitizeForHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 module.exports = { setupRouter: router, setQrData, setWhatsAppReady };

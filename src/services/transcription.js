@@ -2,6 +2,7 @@ const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
 const { config } = require('../config');
+const logger = require('./logger');
 
 let openai = null;
 
@@ -48,26 +49,32 @@ async function transcribeVoiceMessage(message) {
     const buffer = Buffer.from(media.data, 'base64');
     fs.writeFileSync(tempFile, buffer);
 
-    // שליחה ל-Whisper API
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tempFile),
-      model: 'whisper-1',
-      language: 'he', // עברית
-    });
+    try {
+      // שליחה ל-Whisper API
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(tempFile),
+        model: 'whisper-1',
+        language: 'he', // עברית
+      });
 
-    // מחיקת הקובץ הזמני
-    fs.unlinkSync(tempFile);
+      const text = transcription.text?.trim();
 
-    const text = transcription.text?.trim();
+      if (!text) {
+        return null;
+      }
 
-    if (!text) {
-      return null;
+      logger.info('תמלול: "' + text + '"');
+      return text;
+    } finally {
+      // 🔒 מחיקת הקובץ הזמני בכל מקרה – גם אם התמלול נכשל
+      try {
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+      } catch { /* silent */ }
     }
-
-    console.log(`🎤 תמלול: "${text}"`);
-    return text;
   } catch (err) {
-    console.error('❌ שגיאת תמלול:', err.message);
+    logger.error('שגיאת תמלול: ' + err.message);
     throw new Error('לא הצלחתי לתמלל את ההקלטה. נסה לשלוח הודעת טקסט.');
   }
 }

@@ -70,13 +70,21 @@ async function initWhatsApp(onMessage) {
   client.on('message', async (message) => {
     if (message.fromMe) return;
 
+    // 🔒 אבטחה: רק המספר המורשה יכול להפעיל את הסוכן
+    const senderNumber = message.from.replace('@c.us', '');
+    const authorizedNumber = config.userPhoneNumber.replace(/[^0-9]/g, '');
+    if (senderNumber !== authorizedNumber) {
+      logger.warn('הודעה ממספר לא מורשה: ' + message.from);
+      return; // מתעלם לחלוטין – בלי תגובה
+    }
+
     // מצב onboarding – בחירת שם
     if (config.isOnboarding) {
       await handleOnboarding(message);
       return;
     }
 
-    logger.info('הודעה מ-' + message.from + ': ' + (message.body || '[מדיה]'));
+    logger.info('הודעה: ' + (message.body || '[מדיה]'));
 
     if (onMessage) {
       try {

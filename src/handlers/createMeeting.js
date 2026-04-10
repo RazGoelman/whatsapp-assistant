@@ -63,7 +63,7 @@ async function handleCreateMeeting(params, aiResponse) {
 
     return confirmation;
   } catch (err) {
-    return `❌ שגיאה ביצירת הפגישה: ${err.message}`;
+    return `❌ שגיאה ביצירת הפגישה. נסה שוב.`;
   }
 }
 

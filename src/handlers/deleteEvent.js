@@ -71,7 +71,7 @@ async function handleDeleteEvent(params, aiResponse, userId) {
 
     return `🗑️ למחוק את "${targetEvent.summary}" ב-${dateFormatted} ${timeFormatted}? (כן/לא)`;
   } catch (err) {
-    return `❌ שגיאה בחיפוש האירוע: ${err.message}`;
+    return `❌ שגיאה בחיפוש האירוע. נסה שוב.`;
   }
 }
 
@@ -96,7 +96,7 @@ async function confirmDeletion(userId) {
     return `✅ בוטל: ${pending.summary} | ${pending.date} | ${pending.time}`;
   } catch (err) {
     pendingDeletions.delete(userId);
-    return `❌ שגיאה במחיקת האירוע: ${err.message}`;
+    return `❌ שגיאה במחיקת האירוע. נסה שוב.`;
   }
 }
 

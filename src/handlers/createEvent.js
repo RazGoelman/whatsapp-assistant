@@ -47,7 +47,7 @@ async function handleCreateEvent(params, aiResponse) {
 
     return confirmation;
   } catch (err) {
-    return `❌ שגיאה ביצירת האירוע: ${err.message}`;
+    return `❌ שגיאה ביצירת האירוע. נסה שוב.`;
   }
 }
 

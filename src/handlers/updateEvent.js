@@ -77,7 +77,7 @@ async function handleUpdateEvent(params, aiResponse, askUser) {
 
     return confirmation;
   } catch (err) {
-    return `❌ שגיאה בעדכון האירוע: ${err.message}`;
+    return `❌ שגיאה בעדכון האירוע. נסה שוב.`;
   }
 }
 

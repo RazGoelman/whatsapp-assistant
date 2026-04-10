@@ -20,14 +20,15 @@ async function main() {
   const app = express();
   app.use('/setup', setupRouter);
   app.get('/', (req, res) => {
-    res.redirect('/setup?password=' + config.setupPassword);
+    res.redirect('/setup/login');
   });
 
   app.listen(config.port, () => {
     console.log('🌐 דף ההגדרה זמין:');
-    console.log('   https://<your-server>/setup?password=' + config.setupPassword);
+    console.log('   https://<your-server>/setup/login');
     console.log('');
-    console.log('📱 פתח את הקישור הזה בדפדפן הנייד.');
+    console.log('🔑 סיסמת כניסה: ' + config.setupPassword);
+    console.log('   (שמור את הסיסמה – היא נדרשת לכניסה לדף ההגדרות)');
     console.log('');
   });
 
@@ -72,9 +73,10 @@ async function main() {
       const reply = await routeIntent(intent, params, response, message);
       if (reply) await sendMessage(message.from, reply);
     } catch (err) {
-      logger.error('שגיאה: ' + err.message);
+      logger.error('שגיאה בעיבוד: ' + err.message + '\n' + err.stack);
       try {
-        await sendMessage(message.from, '⚠️ משהו השתבש: ' + err.message);
+        // 🔒 לא חושפים פרטי שגיאה פנימיים למשתמש
+        await sendMessage(message.from, '⚠️ משהו השתבש. נסה שוב בעוד רגע.');
       } catch { /* silent */ }
     }
   });
