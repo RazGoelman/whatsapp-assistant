@@ -19,7 +19,7 @@ async function main() {
   console.log('');
 
   // === שלב 1: מסד נתונים ===
-  initDatabase();
+  await initDatabase();
 
   // === שלב 2: שירותים ===
   initAI();

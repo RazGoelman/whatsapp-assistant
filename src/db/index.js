@@ -1,77 +1,71 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const logger = require('../services/logger');
 
-// 🔒 DB file מחוץ ל-public — לא נגיש מהווב
 const DB_DIR = path.resolve(__dirname, '../../data');
 const DB_PATH = path.join(DB_DIR, 'app.db');
 const BACKUP_DIR = path.resolve(__dirname, '../../data/backups');
-
-// 🔒 מפתח הצפנה לשדות רגישים (AES-256)
 const ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 const ALGORITHM = 'aes-256-cbc';
 
 let db = null;
 
-// === הצפנה/פענוח ===
-
+// === Encryption ===
 function encrypt(text) {
   if (!text) return null;
-  const iv = crypto.randomBytes(16);
   const key = Buffer.from(ENCRYPTION_KEY, 'hex').slice(0, 32);
+  const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return iv.toString('hex') + ':' + encrypted;
+  let enc = cipher.update(text, 'utf8', 'hex');
+  enc += cipher.final('hex');
+  return iv.toString('hex') + ':' + enc;
 }
 
-function decrypt(encryptedText) {
-  if (!encryptedText) return null;
+function decrypt(text) {
+  if (!text) return null;
   try {
-    const [ivHex, encrypted] = encryptedText.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
+    const [ivHex, enc] = text.split(':');
     const key = Buffer.from(ENCRYPTION_KEY, 'hex').slice(0, 32);
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } catch {
-    return null;
-  }
+    const decipher = crypto.createDecipheriv(ALGORITHM, Buffer.from(ivHex, 'hex'), key);
+    let dec = decipher.update(enc, 'hex', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  } catch { return null; }
 }
 
-// === אתחול DB ===
+// === Init ===
+async function initDatabase() {
+  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-function initDatabase() {
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
+  const SQL = await initSqlJs();
 
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  if (fs.existsSync(DB_PATH)) {
+    const buf = fs.readFileSync(DB_PATH);
+    db = new SQL.Database(buf);
+  } else {
+    db = new SQL.Database();
+  }
 
   runMigrations();
-  logger.info('מסד נתונים מאותחל: ' + DB_PATH);
+  saveDb();
 
-  // 🔒 אם אין מפתח הצפנה ב-.env — מדפיס אזהרה
   if (!process.env.DB_ENCRYPTION_KEY) {
-    logger.warn('DB_ENCRYPTION_KEY לא מוגדר. נוצר מפתח זמני. הגדר ב-.env לקביעות!');
-    logger.warn('מפתח: ' + ENCRYPTION_KEY);
+    console.log('[DB] ⚠️ DB_ENCRYPTION_KEY not set. Using temp key: ' + ENCRYPTION_KEY);
   }
-
+  console.log('[DB] ✅ Database ready: ' + DB_PATH);
   return db;
 }
 
-// === Migrations ===
+function saveDb() {
+  if (!db) return;
+  const data = db.export();
+  fs.writeFileSync(DB_PATH, Buffer.from(data));
+}
 
 function runMigrations() {
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS tenants (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -87,7 +81,6 @@ function runMigrations() {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
-
     CREATE TABLE IF NOT EXISTS usage_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tenant_id INTEGER,
@@ -95,10 +88,8 @@ function runMigrations() {
       tokens_used INTEGER DEFAULT 0,
       status TEXT DEFAULT 'success',
       details TEXT,
-      timestamp TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      timestamp TEXT DEFAULT (datetime('now'))
     );
-
     CREATE TABLE IF NOT EXISTS invitations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       token TEXT NOT NULL UNIQUE,
@@ -108,7 +99,6 @@ function runMigrations() {
       used_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
-
     CREATE TABLE IF NOT EXISTS billing_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tenant_id INTEGER NOT NULL,
@@ -119,10 +109,8 @@ function runMigrations() {
       period_start TEXT,
       period_end TEXT,
       paid_at TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      created_at TEXT DEFAULT (datetime('now'))
     );
-
     CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       actor TEXT DEFAULT 'system',
@@ -132,217 +120,163 @@ function runMigrations() {
       details TEXT,
       timestamp TEXT DEFAULT (datetime('now'))
     );
-
-    CREATE INDEX IF NOT EXISTS idx_tenants_phone ON tenants(phone);
-    CREATE INDEX IF NOT EXISTS idx_usage_tenant ON usage_logs(tenant_id);
-    CREATE INDEX IF NOT EXISTS idx_billing_tenant ON billing_history(tenant_id);
-    CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
   `);
 }
 
-// === CRUD Functions ===
+// === Helpers ===
+function queryOne(sql, params) {
+  const stmt = db.prepare(sql);
+  if (params) stmt.bind(params);
+  if (stmt.step()) { const row = stmt.getAsObject(); stmt.free(); return row; }
+  stmt.free(); return null;
+}
 
-// --- Tenants ---
+function queryAll(sql, params) {
+  const stmt = db.prepare(sql);
+  if (params) stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free(); return rows;
+}
 
+function runSql(sql, params) {
+  if (params) { const stmt = db.prepare(sql); stmt.bind(params); stmt.step(); stmt.free(); }
+  else db.run(sql);
+  saveDb();
+}
+
+// === Tenants ===
 function createTenant({ name, phone, license_key, stripe_customer_id }) {
-  const stmt = db.prepare(`
-    INSERT INTO tenants (name, phone, license_key, stripe_customer_id)
-    VALUES (?, ?, ?, ?)
-  `);
-  const result = stmt.run(name, phone, encrypt(license_key), stripe_customer_id || null);
-  logAudit('admin', 'create_tenant', 'tenant', result.lastInsertRowid, 'שם: ' + name);
-  return result.lastInsertRowid;
+  runSql('INSERT INTO tenants (name, phone, license_key, stripe_customer_id) VALUES (?,?,?,?)',
+    [name, phone, encrypt(license_key), stripe_customer_id || null]);
+  const row = queryOne("SELECT last_insert_rowid() as id");
+  const id = row.id;
+  logAudit('admin', 'create_tenant', 'tenant', id, 'name: ' + name);
+  return id;
 }
 
 function getTenantById(id) {
-  const tenant = db.prepare('SELECT * FROM tenants WHERE id = ? AND deleted = 0').get(id);
-  if (tenant) decryptTenantFields(tenant);
-  return tenant;
+  const t = queryOne('SELECT * FROM tenants WHERE id = ? AND deleted = 0', [id]);
+  if (t) decryptFields(t);
+  return t;
 }
 
 function getTenantByPhone(phone) {
   const cleaned = phone.replace(/[^0-9]/g, '');
-  const tenant = db.prepare('SELECT * FROM tenants WHERE phone = ? AND deleted = 0').get(cleaned);
-  if (tenant) decryptTenantFields(tenant);
-  return tenant;
+  const t = queryOne('SELECT * FROM tenants WHERE phone = ? AND deleted = 0', [cleaned]);
+  if (t) decryptFields(t);
+  return t;
 }
 
 function getAllTenants() {
-  const tenants = db.prepare('SELECT * FROM tenants WHERE deleted = 0 ORDER BY created_at DESC').all();
-  tenants.forEach(t => decryptTenantFields(t));
-  return tenants;
+  const rows = queryAll('SELECT * FROM tenants WHERE deleted = 0 ORDER BY created_at DESC');
+  rows.forEach(t => decryptFields(t));
+  return rows;
 }
 
 function updateTenant(id, data) {
-  const fields = [];
-  const values = [];
-
-  if (data.name !== undefined) { fields.push('name = ?'); values.push(data.name); }
-  if (data.phone !== undefined) { fields.push('phone = ?'); values.push(data.phone); }
-  if (data.agent_name !== undefined) { fields.push('agent_name = ?'); values.push(data.agent_name); }
-  if (data.license_key !== undefined) { fields.push('license_key = ?'); values.push(encrypt(data.license_key)); }
-  if (data.stripe_customer_id !== undefined) { fields.push('stripe_customer_id = ?'); values.push(data.stripe_customer_id); }
-  if (data.stripe_subscription_id !== undefined) { fields.push('stripe_subscription_id = ?'); values.push(data.stripe_subscription_id); }
-  if (data.subscription_status !== undefined) { fields.push('subscription_status = ?'); values.push(data.subscription_status); }
-  if (data.google_refresh_token !== undefined) { fields.push('google_refresh_token = ?'); values.push(encrypt(data.google_refresh_token)); }
-  if (data.whatsapp_status !== undefined) { fields.push('whatsapp_status = ?'); values.push(data.whatsapp_status); }
-
+  const fields = []; const vals = [];
+  if (data.name !== undefined) { fields.push('name=?'); vals.push(data.name); }
+  if (data.phone !== undefined) { fields.push('phone=?'); vals.push(data.phone); }
+  if (data.agent_name !== undefined) { fields.push('agent_name=?'); vals.push(data.agent_name); }
+  if (data.license_key !== undefined) { fields.push('license_key=?'); vals.push(encrypt(data.license_key)); }
+  if (data.stripe_customer_id !== undefined) { fields.push('stripe_customer_id=?'); vals.push(data.stripe_customer_id); }
+  if (data.stripe_subscription_id !== undefined) { fields.push('stripe_subscription_id=?'); vals.push(data.stripe_subscription_id); }
+  if (data.subscription_status !== undefined) { fields.push('subscription_status=?'); vals.push(data.subscription_status); }
+  if (data.google_refresh_token !== undefined) { fields.push('google_refresh_token=?'); vals.push(encrypt(data.google_refresh_token)); }
+  if (data.whatsapp_status !== undefined) { fields.push('whatsapp_status=?'); vals.push(data.whatsapp_status); }
   if (fields.length === 0) return;
-
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  const sql = 'UPDATE tenants SET ' + fields.join(', ') + ' WHERE id = ?';
-  db.prepare(sql).run(...values);
-
-  logAudit('admin', 'update_tenant', 'tenant', id, JSON.stringify(Object.keys(data)));
+  fields.push("updated_at=datetime('now')");
+  vals.push(id);
+  runSql('UPDATE tenants SET ' + fields.join(',') + ' WHERE id=?', vals);
 }
 
 function softDeleteTenant(id) {
-  db.prepare("UPDATE tenants SET deleted = 1, updated_at = datetime('now') WHERE id = ?").run(id);
+  runSql("UPDATE tenants SET deleted=1, updated_at=datetime('now') WHERE id=?", [id]);
   logAudit('admin', 'delete_tenant', 'tenant', id, 'soft delete');
 }
 
-// --- Invitations ---
-
+// === Invitations ===
 function createInvitation(tenantName) {
   const { v4: uuidv4 } = require('uuid');
   const token = uuidv4();
-  db.prepare('INSERT INTO invitations (token, tenant_name) VALUES (?, ?)').run(token, tenantName);
-  logAudit('admin', 'create_invitation', 'invitation', null, 'שם: ' + tenantName);
+  runSql('INSERT INTO invitations (token, tenant_name) VALUES (?,?)', [token, tenantName]);
+  logAudit('admin', 'create_invitation', 'invitation', null, tenantName);
   return token;
 }
 
-function getInvitation(token) {
-  return db.prepare('SELECT * FROM invitations WHERE token = ?').get(token);
-}
+function getInvitation(token) { return queryOne('SELECT * FROM invitations WHERE token=?', [token]); }
+function markInvitationUsed(token) { runSql("UPDATE invitations SET used=1, used_at=datetime('now') WHERE token=?", [token]); }
 
-function markInvitationUsed(token) {
-  db.prepare("UPDATE invitations SET used = 1, used_at = datetime('now') WHERE token = ?").run(token);
-}
-
-// --- Billing History ---
-
+// === Billing ===
 function addBillingRecord({ tenant_id, stripe_invoice_id, amount_cents, currency, status, period_start, period_end, paid_at }) {
-  db.prepare(`
-    INSERT INTO billing_history (tenant_id, stripe_invoice_id, amount_cents, currency, status, period_start, period_end, paid_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(tenant_id, stripe_invoice_id, amount_cents, currency || 'usd', status, period_start, period_end, paid_at);
+  runSql('INSERT INTO billing_history (tenant_id,stripe_invoice_id,amount_cents,currency,status,period_start,period_end,paid_at) VALUES (?,?,?,?,?,?,?,?)',
+    [tenant_id, stripe_invoice_id, amount_cents, currency || 'usd', status, period_start, period_end, paid_at]);
 }
 
 function getBillingHistory(tenantId) {
-  return db.prepare('SELECT * FROM billing_history WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId);
+  return queryAll('SELECT * FROM billing_history WHERE tenant_id=? ORDER BY created_at DESC', [tenantId]);
 }
 
 function getMonthlyRevenue() {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(amount_cents), 0) as total
-    FROM billing_history 
-    WHERE status = 'paid' 
-    AND paid_at >= datetime('now', '-30 days')
-  `).get();
-  return row.total;
+  const row = queryOne("SELECT COALESCE(SUM(amount_cents),0) as total FROM billing_history WHERE status='paid' AND paid_at >= datetime('now','-30 days')");
+  return row ? row.total : 0;
 }
 
-// --- Usage Logs ---
-
+// === Usage Logs ===
 function logUsage(tenantId, actionType, tokensUsed, status, details) {
-  db.prepare(`
-    INSERT INTO usage_logs (tenant_id, action_type, tokens_used, status, details)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(tenantId, actionType, tokensUsed || 0, status || 'success', details || null);
+  runSql('INSERT INTO usage_logs (tenant_id,action_type,tokens_used,status,details) VALUES (?,?,?,?,?)',
+    [tenantId, actionType, tokensUsed || 0, status || 'success', details || null]);
 }
 
 function getUsageLogs(options = {}) {
-  let sql = 'SELECT ul.*, t.name as tenant_name FROM usage_logs ul LEFT JOIN tenants t ON ul.tenant_id = t.id WHERE 1=1';
+  let sql = 'SELECT ul.*, t.name as tenant_name FROM usage_logs ul LEFT JOIN tenants t ON ul.tenant_id=t.id WHERE 1=1';
   const params = [];
-
-  if (options.tenantId) { sql += ' AND ul.tenant_id = ?'; params.push(options.tenantId); }
-  if (options.actionType) { sql += ' AND ul.action_type = ?'; params.push(options.actionType); }
-  if (options.since) { sql += ' AND ul.timestamp >= ?'; params.push(options.since); }
-
+  if (options.tenantId) { sql += ' AND ul.tenant_id=?'; params.push(options.tenantId); }
+  if (options.actionType) { sql += ' AND ul.action_type=?'; params.push(options.actionType); }
   sql += ' ORDER BY ul.timestamp DESC LIMIT ?';
-  params.push(options.limit || 1000);
-
-  return db.prepare(sql).all(...params);
+  params.push(options.limit || 500);
+  return queryAll(sql, params);
 }
 
 function getTenantUsageStats(tenantId) {
-  const today = db.prepare("SELECT COUNT(*) as count FROM usage_logs WHERE tenant_id = ? AND timestamp >= date('now')").get(tenantId);
-  const week = db.prepare("SELECT COUNT(*) as count FROM usage_logs WHERE tenant_id = ? AND timestamp >= date('now', '-7 days')").get(tenantId);
-  const month = db.prepare("SELECT COUNT(*) as count FROM usage_logs WHERE tenant_id = ? AND timestamp >= date('now', '-30 days')").get(tenantId);
-  return { today: today.count, week: week.count, month: month.count };
+  const today = queryOne("SELECT COUNT(*) as count FROM usage_logs WHERE tenant_id=? AND timestamp>=date('now')", [tenantId]);
+  const week = queryOne("SELECT COUNT(*) as count FROM usage_logs WHERE tenant_id=? AND timestamp>=date('now','-7 days')", [tenantId]);
+  const month = queryOne("SELECT COUNT(*) as count FROM usage_logs WHERE tenant_id=? AND timestamp>=date('now','-30 days')", [tenantId]);
+  return { today: today?.count || 0, week: week?.count || 0, month: month?.count || 0 };
 }
 
-// --- Audit Log ---
-
+// === Audit ===
 function logAudit(actor, action, targetType, targetId, details) {
-  db.prepare(`
-    INSERT INTO audit_log (actor, action, target_type, target_id, details)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(actor, action, targetType || null, targetId || null, details || null);
+  runSql('INSERT INTO audit_log (actor,action,target_type,target_id,details) VALUES (?,?,?,?,?)',
+    [actor, action, targetType, targetId, details]);
 }
 
-// --- Backup ---
-
+// === Backup ===
 function backupDatabase() {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-  const backupPath = path.join(BACKUP_DIR, 'backup-' + timestamp + '.db');
-
+  if (!db) return;
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+  const bkPath = path.join(BACKUP_DIR, 'backup-' + ts + '.db');
   try {
-    db.backup(backupPath);
-    logger.info('גיבוי DB: ' + backupPath);
-
-    // 🔒 שמירת 7 ימים אחרונים בלבד
-    const files = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.startsWith('backup-') && f.endsWith('.db'))
-      .sort()
-      .reverse();
-
-    files.slice(7).forEach(f => {
-      fs.unlinkSync(path.join(BACKUP_DIR, f));
-    });
-  } catch (err) {
-    logger.error('שגיאה בגיבוי DB: ' + err.message);
-  }
+    fs.writeFileSync(bkPath, Buffer.from(db.export()));
+    const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('backup-')).sort().reverse();
+    files.slice(7).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
+    console.log('[DB] Backup: ' + bkPath);
+  } catch (err) { console.error('[DB] Backup error: ' + err.message); }
 }
 
-// --- Helpers ---
-
-function decryptTenantFields(tenant) {
-  if (tenant.license_key) tenant.license_key = decrypt(tenant.license_key);
-  if (tenant.google_refresh_token) tenant.google_refresh_token = decrypt(tenant.google_refresh_token);
+function decryptFields(t) {
+  if (t.license_key) t.license_key = decrypt(t.license_key);
+  if (t.google_refresh_token) t.google_refresh_token = decrypt(t.google_refresh_token);
 }
 
 function getDb() { return db; }
 
 module.exports = {
-  initDatabase,
-  getDb,
-  // Tenants
-  createTenant,
-  getTenantById,
-  getTenantByPhone,
-  getAllTenants,
-  updateTenant,
-  softDeleteTenant,
-  // Invitations
-  createInvitation,
-  getInvitation,
-  markInvitationUsed,
-  // Billing
-  addBillingRecord,
-  getBillingHistory,
-  getMonthlyRevenue,
-  // Usage
-  logUsage,
-  getUsageLogs,
-  getTenantUsageStats,
-  // Audit
-  logAudit,
-  // Backup
-  backupDatabase,
-  // Encryption (for external use)
-  encrypt,
-  decrypt,
+  initDatabase, getDb, saveDb,
+  createTenant, getTenantById, getTenantByPhone, getAllTenants, updateTenant, softDeleteTenant,
+  createInvitation, getInvitation, markInvitationUsed,
+  addBillingRecord, getBillingHistory, getMonthlyRevenue,
+  logUsage, getUsageLogs, getTenantUsageStats,
+  logAudit, backupDatabase, encrypt, decrypt,
 };
