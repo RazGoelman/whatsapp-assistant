@@ -17,17 +17,20 @@ function initAI() {
  * בונה את ה-System Prompt בזמן ריצה (לא ב-load time)
  * כדי שישתמש בשם הסוכן העדכני (שנקבע ב-onboarding)
  */
-function buildSystemPrompt() {
-  const now = new Date().toLocaleString('he-IL', { timeZone: config.timezone });
+function buildSystemPrompt(tenant) {
+  const tz = config.timezone;
+  const now = new Date().toLocaleString('he-IL', { timeZone: tz });
   const today = new Date().toLocaleDateString('he-IL', {
-    timeZone: config.timezone,
+    timeZone: tz,
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
 
-  return `אתה עוזר אישי חכם בשם "${config.agentName}". 
+  const agentName = (tenant && tenant.agent_name) || config.agentName || 'עוזר';
+
+  return `אתה עוזר אישי חכם בשם "${agentName}". 
 אתה מקבל הודעות מהמשתמש דרך WhatsApp ומבצע פעולות עבורו.
 אזור הזמן של המשתמש: ${config.timezone}.
 היום: ${today}.
@@ -92,9 +95,10 @@ const MAX_MESSAGE_LENGTH = 2000;
 /**
  * שולח הודעה ל-Claude ומקבל תשובה מובנית
  * @param {string} userMessage - ההודעה מהמשתמש
+ * @param {object} [tenant] - אובייקט tenant (multi-tenant mode)
  * @returns {Promise<{intent: string, response: string, params: object}>}
  */
-async function processMessage(userMessage) {
+async function processMessage(userMessage, tenant) {
   if (!anthropic) {
     throw new Error('Claude API לא מאותחל. קרא ל-initAI() קודם.');
   }
@@ -109,7 +113,7 @@ async function processMessage(userMessage) {
   }
 
   try {
-    const systemPrompt = buildSystemPrompt();
+    const systemPrompt = buildSystemPrompt(tenant);
 
     const message = await anthropic.messages.create({
       model: config.aiModel,

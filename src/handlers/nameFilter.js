@@ -2,17 +2,19 @@ const { config } = require('../config');
 
 /**
  * בודק אם ההודעה מתחילה בשם הסוכן.
- * אם כן – מחזיר את תוכן ההודעה ללא השם.
- * אם לא – מחזיר null (מתעלמים מההודעה).
+ * תומך ב-multi-tenant: אם agentName מסופק, משתמש בו. אחרת משתמש ב-config.
  *
  * @param {string} messageBody - תוכן ההודעה
+ * @param {string} [agentName] - שם הסוכן (per-tenant)
  * @returns {string|null} - התוכן ללא שם הסוכן, או null
  */
-function extractAgentCommand(messageBody) {
-  if (!messageBody || !config.agentName) return null;
+function extractAgentCommand(messageBody, agentName) {
+  if (!messageBody) return null;
+
+  const name = (agentName || config.agentName || '').trim();
+  if (!name) return null;
 
   const body = messageBody.trim();
-  const name = config.agentName.trim();
 
   if (!name) return null;
 
