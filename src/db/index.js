@@ -145,12 +145,18 @@ function runSql(sql, params) {
   saveDb();
 }
 
+function runSqlGetId(sql, params) {
+  if (params) { const stmt = db.prepare(sql); stmt.bind(params); stmt.step(); stmt.free(); }
+  else db.run(sql);
+  const row = queryOne("SELECT last_insert_rowid() as id");
+  saveDb();
+  return row ? row.id : 0;
+}
+
 // === Tenants ===
 function createTenant({ name, phone, license_key, stripe_customer_id }) {
-  runSql('INSERT INTO tenants (name, phone, license_key, stripe_customer_id) VALUES (?,?,?,?)',
+  const id = runSqlGetId('INSERT INTO tenants (name, phone, license_key, stripe_customer_id) VALUES (?,?,?,?)',
     [name, phone, encrypt(license_key), stripe_customer_id || null]);
-  const row = queryOne("SELECT last_insert_rowid() as id");
-  const id = row.id;
   logAudit('admin', 'create_tenant', 'tenant', id, 'name: ' + name);
   return id;
 }
