@@ -158,7 +158,50 @@ router.get('/invite', requireAdmin, (req, res) => {
       <input type="text" name="name" placeholder="ישראל ישראלי" required>
       <button type="submit" class="btn" style="width:100%;margin-top:16px">צור לינק הזמנה</button>
     </form>
+
+    <h2 style="margin-top:30px">או: הוסף לקוח ישירות (Trial)</h2>
+    <p style="color:#888;font-size:0.85rem">בלי Stripe — מוסיף לקוח במצב ניסיון</p>
+    <form method="POST" action="/admin/add-tenant">
+      <label>שם מלא</label>
+      <input type="text" name="name" placeholder="ישראל ישראלי" required>
+      <label>מספר טלפון (WhatsApp)</label>
+      <input type="tel" name="phone" placeholder="972501234567" required pattern="[0-9]{10,15}">
+      <button type="submit" class="btn" style="width:100%;margin-top:16px;background:#f0c040;color:#000">+ הוסף לקוח (Trial)</button>
+    </form>
   `));
+});
+
+// === הוספת לקוח ישירות (Trial, בלי Stripe) ===
+router.post('/add-tenant', requireAdmin, express.urlencoded({ extended: true }), (req, res) => {
+  const name = (req.body.name || '').trim();
+  const phone = (req.body.phone || '').trim().replace(/[^0-9]/g, '');
+
+  if (!name || name.length < 2) {
+    return res.send(adminPage('שגיאה', '<div style="background:#3d1111;padding:16px;border-radius:10px">שם חייב להיות לפחות 2 תווים.</div><a href="/admin/invite" class="btn">← חזור</a>'));
+  }
+  if (!phone || !/^[0-9]{10,15}$/.test(phone)) {
+    return res.send(adminPage('שגיאה', '<div style="background:#3d1111;padding:16px;border-radius:10px">מספר טלפון לא תקין.</div><a href="/admin/invite" class="btn">← חזור</a>'));
+  }
+
+  try {
+    const tenantId = tenantManager.createTenant({ name, phone, license_key: null, stripe_customer_id: null });
+    logger.info('לקוח Trial נוצר מהדשבורד: ' + name + ' (ID: ' + tenantId + ')');
+
+    res.send(adminPage('לקוח נוצר', `
+      <h1>✅ לקוח נוצר!</h1>
+      <div class="card">
+        <p>שם: <strong>${esc(name)}</strong></p>
+        <p>טלפון: <strong>${esc(phone)}</strong></p>
+        <p>סטטוס: <span class="badge badge-yellow">Trial</span></p>
+      </div>
+      <p>השלב הבא: חבר את ה-WhatsApp של הלקוח</p>
+      <a href="/admin/tenant/${tenantId}" class="btn">פתח דף לקוח →</a>
+      <a href="/admin" class="btn btn-secondary">← חזור לדשבורד</a>
+    `));
+  } catch (err) {
+    logger.error('שגיאה ביצירת לקוח: ' + err.message);
+    res.send(adminPage('שגיאה', '<div style="background:#3d1111;padding:16px;border-radius:10px">שגיאה: ' + esc(err.message) + '</div><a href="/admin/invite" class="btn">← חזור</a>'));
+  }
 });
 
 router.post('/invite', requireAdmin, express.urlencoded({ extended: true }), (req, res) => {
