@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { google } = require('googleapis');
 const { config, saveToEnv, isSetupComplete } = require('../config');
+const { validateLicense, activateLicense, isLicensed } = require('../services/license');
 const logger = require('../services/logger');
 
 const router = express.Router();
@@ -159,9 +160,28 @@ router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
 // === דף ראשי – Setup ===
 router.get('/', requireAuth, (req, res) => {
   const complete = isSetupComplete();
+  const licensed = isLicensed();
 
   res.send(page('🤖 הגדרת העוזר האישי', `
     ${complete ? '<div class="success">✅ ההגדרות הבסיסיות הושלמו. ניתן לעדכן.</div>' : ''}
+
+    <div class="step">
+      <span class="step-num">שלב 0</span> – מפתח רישיון
+      ${licensed ? ' ✅' : ' (חובה)'}
+    </div>
+
+    ${licensed ? `
+      <div class="success">🔑 רישיון פעיל: ${sanitizeForHtml(config.licenseKey.substring(0, 7))}...</div>
+    ` : `
+      <form method="POST" action="/setup/license">
+        <label>🔑 מפתח רישיון</label>
+        <input type="text" name="license_key" placeholder="WA-XXXX-XXXX-XXXX-XXXX" 
+               required pattern="WA-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}"
+               style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 18px;">
+        <div class="hint">קיבלת מפתח מהמנהל? הזן אותו כאן.</div>
+        <button type="submit" class="btn">🔓 הפעל רישיון</button>
+      </form>
+    `}
 
     <div class="step">
       <span class="step-num">שלב 1</span> – הזנת פרטים ו-API Keys
@@ -207,6 +227,33 @@ router.get('/', requireAuth, (req, res) => {
     <div class="step">
       <span class="step-num">שלב 3</span> – <a href="/setup/whatsapp">חבר WhatsApp</a>
     </div>
+  `));
+});
+
+// === הפעלת רישיון ===
+router.post('/license', requireAuth, express.urlencoded({ extended: true }), (req, res) => {
+  const key = (req.body.license_key || '').trim().toUpperCase();
+
+  const { valid, error } = validateLicense(key);
+  if (!valid) {
+    return res.send(page('❌ רישיון לא תקין', `
+      <div class="error">${sanitizeForHtml(error)}</div>
+      <a href="/setup" class="btn">← חזור</a>
+    `));
+  }
+
+  const activated = activateLicense(key);
+  if (!activated) {
+    return res.send(page('❌ שגיאה', `
+      <div class="error">לא הצלחתי להפעיל את הרישיון. נסה שוב.</div>
+      <a href="/setup" class="btn">← חזור</a>
+    `));
+  }
+
+  logger.info('רישיון הופעל מדף ה-Setup: ' + key.substring(0, 7) + '...');
+  res.send(page('✅ רישיון הופעל!', `
+    <div class="success">🔑 הרישיון הופעל בהצלחה! המפתח ננעל למכשיר הזה.</div>
+    <a href="/setup" class="btn">המשך להגדרות →</a>
   `));
 });
 

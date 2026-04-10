@@ -29,6 +29,9 @@ const config = {
   userPhoneNumber: process.env.USER_PHONE_NUMBER || '',
   timezone: process.env.TIMEZONE || 'Asia/Jerusalem',
 
+  // רישיון
+  licenseKey: process.env.LICENSE_KEY || '',
+
   // הגדרות שרת
   port: parseInt(process.env.PORT, 10) || 3000,
   setupPassword: process.env.SETUP_PASSWORD || crypto.randomBytes(8).toString('hex'),

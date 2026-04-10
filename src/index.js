@@ -1,5 +1,6 @@
 const express = require('express');
 const { config, isSetupComplete } = require('./config');
+const { isLicensed } = require('./services/license');
 const { initWhatsApp, sendMessage, onQr, onReady } = require('./services/whatsapp');
 const { initAI, processMessage } = require('./services/ai');
 const { initCalendar } = require('./services/calendar');
@@ -16,7 +17,8 @@ async function main() {
   console.log('🤖 === מפעיל את העוזר האישי ===');
   console.log('');
 
-  // === שלב 1: שרת Express – תמיד פעיל (גם לפני setup) ===
+  // === שלב 0: בדיקת רישיון ===
+  // שרת Express עולה תמיד כדי לאפשר הזנת רישיון בדף Setup
   const app = express();
   app.use('/setup', setupRouter);
   app.get('/', (req, res) => {
@@ -28,11 +30,21 @@ async function main() {
     console.log('   https://<your-server>/setup/login');
     console.log('');
     console.log('🔑 סיסמת כניסה: ' + config.setupPassword);
-    console.log('   (שמור את הסיסמה – היא נדרשת לכניסה לדף ההגדרות)');
     console.log('');
   });
 
-  // === שלב 2: ממתין ל-setup אם צריך ===
+  // ממתין לרישיון תקין
+  if (!isLicensed()) {
+    console.log('');
+    console.log('🔐 נדרש מפתח רישיון.');
+    console.log('   הזן את המפתח בדף ה-Setup בדפדפן.');
+    console.log('');
+    await waitForLicense();
+  }
+
+  logger.info('✅ רישיון תקין.');
+
+  // === שלב 1: ממתין ל-setup אם צריך ===
   if (!isSetupComplete()) {
     logger.warn('ההגדרה טרם הושלמה – ממתין למילוי דרך דף ה-Setup.');
     await waitForSetup();
@@ -100,6 +112,17 @@ function waitForSetup() {
       if (isSetupComplete()) {
         clearInterval(check);
         logger.info('ההגדרה הושלמה!');
+        resolve();
+      }
+    }, 5000);
+  });
+}
+
+function waitForLicense() {
+  return new Promise((resolve) => {
+    const check = setInterval(() => {
+      if (isLicensed()) {
+        clearInterval(check);
         resolve();
       }
     }, 5000);
