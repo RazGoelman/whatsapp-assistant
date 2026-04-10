@@ -1,136 +1,188 @@
 const express = require('express');
-const { config, isSetupComplete } = require('./config');
-const { isLicensed } = require('./services/license');
-const { initWhatsApp, sendMessage, onQr, onReady } = require('./services/whatsapp');
-const { initAI, processMessage } = require('./services/ai');
-const { initCalendar } = require('./services/calendar');
-const { initTranscription, transcribeVoiceMessage } = require('./services/transcription');
-const { startReminderScheduler } = require('./services/reminderScheduler');
-const { startDailySummary } = require('./services/dailySummary');
-const { extractAgentCommand } = require('./handlers/nameFilter');
-const { routeIntent } = require('./handlers/intentRouter');
-const { setupRouter, setQrData, setWhatsAppReady } = require('./web/setupServer');
+const cron = require('node-cron');
+const { initDatabase, backupDatabase } = require('./db');
+const { initAI } = require('./services/ai');
+const { initStripe } = require('./services/stripe');
+const { initTranscription } = require('./services/transcription');
+const whatsappManager = require('./services/whatsappManager');
+const tenantManager = require('./services/tenantManager');
+const { handleIncomingMessage } = require('./handlers/messageRouter');
+const { adminRouter } = require('./web/adminDashboard');
+const { customerRouter } = require('./web/customerPages');
 const logger = require('./services/logger');
+
+const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 async function main() {
   console.log('');
-  console.log('🤖 === מפעיל את העוזר האישי ===');
+  console.log('🤖 === WhatsApp Assistant SaaS v3 ===');
   console.log('');
 
-  // === שלב 0: בדיקת רישיון ===
-  // שרת Express עולה תמיד כדי לאפשר הזנת רישיון בדף Setup
-  const app = express();
-  app.use('/setup', setupRouter);
-  app.get('/', (req, res) => {
-    res.redirect('/setup/login');
-  });
+  // === שלב 1: מסד נתונים ===
+  initDatabase();
 
-  app.listen(config.port, () => {
-    console.log('🌐 דף ההגדרה זמין:');
-    console.log('   https://<your-server>/setup/login');
-    console.log('');
-    console.log('🔑 סיסמת כניסה: ' + config.setupPassword);
-    console.log('');
-  });
-
-  // ממתין לרישיון תקין
-  if (!isLicensed()) {
-    console.log('');
-    console.log('🔐 נדרש מפתח רישיון.');
-    console.log('   הזן את המפתח בדף ה-Setup בדפדפן.');
-    console.log('');
-    await waitForLicense();
-  }
-
-  logger.info('✅ רישיון תקין.');
-
-  // === שלב 1: ממתין ל-setup אם צריך ===
-  if (!isSetupComplete()) {
-    logger.warn('ההגדרה טרם הושלמה – ממתין למילוי דרך דף ה-Setup.');
-    await waitForSetup();
-  }
-
-  // === שלב 3: אתחול שירותים ===
-  logger.info('מאתחל שירותים...');
+  // === שלב 2: שירותים ===
   initAI();
-  initCalendar();
+  initStripe();
   initTranscription();
 
-  // === שלב 4: WhatsApp + גשר לדף הווב ===
-  onQr((dataUrl) => setQrData(dataUrl));
-  onReady((ready) => setWhatsAppReady(ready));
+  // === שלב 3: Express ===
+  const app = express();
 
-  await initWhatsApp(async (message) => {
+  // Stripe Webhook צריך raw body — חייב להיות לפני express.json()
+  app.use('/c/stripe', customerRouter);
+
+  // כל השאר
+  app.use('/admin', adminRouter);
+  app.use('/c', customerRouter);
+
+  app.get('/', (req, res) => {
+    res.redirect('/admin/login');
+  });
+
+  app.listen(PORT, () => {
+    console.log('🌐 שרת פעיל על פורט ' + PORT);
+    console.log('');
+    console.log('📋 דשבורד ניהול: https://<your-server>/admin');
+    console.log('🔑 סיסמת מנהל: ' + (process.env.ADMIN_PASSWORD || '(לא מוגדר — הגדר ADMIN_PASSWORD)'));
+    console.log('');
+  });
+
+  // === שלב 4: חיבור WhatsApp לכל הלקוחות הפעילים ===
+  logger.info('מחבר לקוחות WhatsApp...');
+  await whatsappManager.reconnectAllTenants(handleIncomingMessage);
+
+  const connStats = whatsappManager.getConnectionStats();
+  logger.info('WhatsApp: ' + connStats.connected + '/' + connStats.total + ' מחוברים');
+
+  // === שלב 5: Cron Jobs ===
+
+  // תזכורות — כל 15 דקות
+  cron.schedule('*/15 * * * *', async () => {
     try {
-      let messageText = message.body || '';
-
-      // תמלול קולי
-      if (message.hasMedia && (message.type === 'ptt' || message.type === 'audio')) {
-        const transcribed = await transcribeVoiceMessage(message);
-        if (!transcribed) return;
-        messageText = transcribed;
-      }
-
-      // פילטר שם
-      const command = extractAgentCommand(messageText);
-      if (!command) return;
-
-      logger.info('פקודה: "' + command + '"');
-
-      // AI
-      const { intent, response, params } = await processMessage(command);
-      logger.info('כוונה: ' + intent);
-
-      // Router
-      const reply = await routeIntent(intent, params, response, message);
-      if (reply) await sendMessage(message.from, reply);
+      await runRemindersForAllTenants();
     } catch (err) {
-      logger.error('שגיאה בעיבוד: ' + err.message + '\n' + err.stack);
-      try {
-        // 🔒 לא חושפים פרטי שגיאה פנימיים למשתמש
-        await sendMessage(message.from, '⚠️ משהו השתבש. נסה שוב בעוד רגע.');
-      } catch { /* silent */ }
+      logger.error('שגיאה בתזכורות: ' + err.message);
     }
   });
 
-  // === שלב 5: Cron jobs ===
-  startReminderScheduler();
-  startDailySummary();
+  // סיכום יומי — כל יום ב-20:00
+  cron.schedule('0 20 * * *', async () => {
+    try {
+      await runDailySummaryForAllTenants();
+    } catch (err) {
+      logger.error('שגיאה בסיכום יומי: ' + err.message);
+    }
+  }, { timezone: process.env.TIMEZONE || 'Asia/Jerusalem' });
+
+  // גיבוי DB — כל יום ב-03:00
+  cron.schedule('0 3 * * *', () => {
+    backupDatabase();
+  });
 
   console.log('');
-  if (config.agentName) {
-    console.log('🤖 ' + config.agentName + ' מוכן!');
-  } else {
-    console.log('🤖 ממתין לבחירת שם דרך WhatsApp...');
+  console.log('🤖 המערכת פעילה!');
+  const stats = tenantManager.getTenantStats();
+  console.log('   לקוחות: ' + stats.total + ' | פעילים: ' + stats.active + ' | ניסיון: ' + stats.trial);
+  console.log('');
+}
+
+/**
+ * תזכורות per-tenant
+ */
+async function runRemindersForAllTenants() {
+  const tenants = tenantManager.getAllTenants().filter(t =>
+    ['active', 'trial'].includes(t.subscription_status) &&
+    t.whatsapp_status === 'connected' &&
+    t.google_refresh_token
+  );
+
+  for (const tenant of tenants) {
+    try {
+      const { getEventsForDay } = require('./services/calendar');
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const events = await getEventsForDay(today, tenant);
+
+      for (const event of events) {
+        if (!event.start?.dateTime) continue;
+        const eventStart = new Date(event.start.dateTime);
+        const minutesUntil = (eventStart.getTime() - now.getTime()) / (1000 * 60);
+
+        if (minutesUntil >= 45 && minutesUntil <= 75) {
+          const time = eventStart.toLocaleTimeString('he-IL', {
+            timeZone: process.env.TIMEZONE || 'Asia/Jerusalem',
+            hour: '2-digit', minute: '2-digit',
+          });
+          await whatsappManager.sendToTenant(tenant.id,
+            '⏰ תזכורת: ' + event.summary + ' בעוד שעה (' + time + ')'
+          );
+        }
+      }
+    } catch (err) {
+      logger.error('תזכורת שגיאה tenant ' + tenant.id + ': ' + err.message);
+    }
   }
-  console.log('');
 }
 
-function waitForSetup() {
-  return new Promise((resolve) => {
-    const check = setInterval(() => {
-      if (isSetupComplete()) {
-        clearInterval(check);
-        logger.info('ההגדרה הושלמה!');
-        resolve();
+/**
+ * סיכום יומי per-tenant
+ */
+async function runDailySummaryForAllTenants() {
+  const tenants = tenantManager.getAllTenants().filter(t =>
+    ['active', 'trial'].includes(t.subscription_status) &&
+    t.whatsapp_status === 'connected' &&
+    t.google_refresh_token
+  );
+
+  for (const tenant of tenants) {
+    try {
+      const { getEventsForDay } = require('./services/calendar');
+      const tz = process.env.TIMEZONE || 'Asia/Jerusalem';
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const tomorrow = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+
+      const todayEvents = await getEventsForDay(today, tenant);
+      const tomorrowEvents = await getEventsForDay(tomorrow, tenant);
+
+      let msg = '📋 *סיכום יומי*\n━━━━━━━━━━\n\n';
+
+      msg += '📌 *היום:*\n';
+      if (todayEvents.length === 0) {
+        msg += '   אין אירועים.\n';
+      } else {
+        todayEvents.forEach(e => {
+          const passed = e.end?.dateTime && new Date(e.end.dateTime) < now;
+          const time = e.start?.dateTime
+            ? new Date(e.start.dateTime).toLocaleTimeString('he-IL', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+            : 'כל היום';
+          msg += '   ' + (passed ? '✔️' : '🔵') + ' ' + time + ' – ' + e.summary + '\n';
+        });
       }
-    }, 5000);
-  });
-}
 
-function waitForLicense() {
-  return new Promise((resolve) => {
-    const check = setInterval(() => {
-      if (isLicensed()) {
-        clearInterval(check);
-        resolve();
+      msg += '\n📅 *מחר:*\n';
+      if (tomorrowEvents.length === 0) {
+        msg += '   אין אירועים מתוכננים.\n';
+      } else {
+        tomorrowEvents.forEach(e => {
+          const time = e.start?.dateTime
+            ? new Date(e.start.dateTime).toLocaleTimeString('he-IL', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+            : 'כל היום';
+          msg += '   🔹 ' + time + ' – ' + e.summary + '\n';
+        });
       }
-    }, 5000);
-  });
+
+      await whatsappManager.sendToTenant(tenant.id, msg);
+    } catch (err) {
+      logger.error('סיכום יומי שגיאה tenant ' + tenant.id + ': ' + err.message);
+    }
+  }
 }
 
+// Error handling
 process.on('uncaughtException', (err) => {
-  logger.error('שגיאה לא צפויה: ' + err.message);
+  logger.error('שגיאה לא צפויה: ' + err.message + '\n' + err.stack);
 });
 process.on('unhandledRejection', (reason) => {
   logger.error('Promise rejected: ' + reason);
