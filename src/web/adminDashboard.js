@@ -165,7 +165,72 @@ router.get('/invite', requireAdmin, (req, res) => {
       <label>שם מלא</label>
       <input type="text" name="name" placeholder="ישראל ישראלי" required>
       <label>מספר טלפון (WhatsApp)</label>
-      <input type="tel" name="phone" placeholder="972501234567" required pattern="[0-9]{10,15}">
+      <div style="display:flex;gap:8px">
+        <select name="country_code" style="width:140px;padding:14px;border:1px solid #333;border-radius:10px;background:#1a2a44;color:#fff;font-size:14px">
+          <option value="972">🇮🇱 +972</option>
+          <option value="1">🇺🇸 +1</option>
+          <option value="44">🇬🇧 +44</option>
+          <option value="49">🇩🇪 +49</option>
+          <option value="33">🇫🇷 +33</option>
+          <option value="39">🇮🇹 +39</option>
+          <option value="34">🇪🇸 +34</option>
+          <option value="31">🇳🇱 +31</option>
+          <option value="41">🇨🇭 +41</option>
+          <option value="43">🇦🇹 +43</option>
+          <option value="32">🇧🇪 +32</option>
+          <option value="46">🇸🇪 +46</option>
+          <option value="47">🇳🇴 +47</option>
+          <option value="45">🇩🇰 +45</option>
+          <option value="358">🇫🇮 +358</option>
+          <option value="48">🇵🇱 +48</option>
+          <option value="420">🇨🇿 +420</option>
+          <option value="36">🇭🇺 +36</option>
+          <option value="40">🇷🇴 +40</option>
+          <option value="30">🇬🇷 +30</option>
+          <option value="90">🇹🇷 +90</option>
+          <option value="7">🇷🇺 +7</option>
+          <option value="380">🇺🇦 +380</option>
+          <option value="971">🇦🇪 +971</option>
+          <option value="966">🇸🇦 +966</option>
+          <option value="962">🇯🇴 +962</option>
+          <option value="20">🇪🇬 +20</option>
+          <option value="212">🇲🇦 +212</option>
+          <option value="216">🇹🇳 +216</option>
+          <option value="91">🇮🇳 +91</option>
+          <option value="86">🇨🇳 +86</option>
+          <option value="81">🇯🇵 +81</option>
+          <option value="82">🇰🇷 +82</option>
+          <option value="61">🇦🇺 +61</option>
+          <option value="64">🇳🇿 +64</option>
+          <option value="55">🇧🇷 +55</option>
+          <option value="52">🇲🇽 +52</option>
+          <option value="54">🇦🇷 +54</option>
+          <option value="57">🇨🇴 +57</option>
+          <option value="56">🇨🇱 +56</option>
+          <option value="27">🇿🇦 +27</option>
+          <option value="234">🇳🇬 +234</option>
+          <option value="254">🇰🇪 +254</option>
+          <option value="233">🇬🇭 +233</option>
+          <option value="65">🇸🇬 +65</option>
+          <option value="60">🇲🇾 +60</option>
+          <option value="66">🇹🇭 +66</option>
+          <option value="63">🇵🇭 +63</option>
+          <option value="62">🇮🇩 +62</option>
+          <option value="84">🇻🇳 +84</option>
+          <option value="886">🇹🇼 +886</option>
+          <option value="852">🇭🇰 +852</option>
+          <option value="353">🇮🇪 +353</option>
+          <option value="351">🇵🇹 +351</option>
+          <option value="375">🇧🇾 +375</option>
+          <option value="994">🇦🇿 +994</option>
+          <option value="995">🇬🇪 +995</option>
+          <option value="374">🇦🇲 +374</option>
+          <option value="998">🇺🇿 +998</option>
+          <option value="992">🇹🇯 +992</option>
+        </select>
+        <input type="tel" name="local_phone" placeholder="501234567" required pattern="[0-9]{6,12}" style="flex:1">
+      </div>
+      <p style="font-size:0.8rem;color:#666;margin-top:4px">בחר קידומת והזן את המספר המקומי ללא 0 בהתחלה</p>
       <button type="submit" class="btn" style="width:100%;margin-top:16px;background:#f0c040;color:#000">+ הוסף לקוח (Trial)</button>
     </form>
   `));
@@ -174,12 +239,14 @@ router.get('/invite', requireAdmin, (req, res) => {
 // === הוספת לקוח ישירות (Trial, בלי Stripe) ===
 router.post('/add-tenant', requireAdmin, express.urlencoded({ extended: true }), (req, res) => {
   const name = (req.body.name || '').trim();
-  const phone = (req.body.phone || '').trim().replace(/[^0-9]/g, '');
+  const countryCode = (req.body.country_code || '').trim().replace(/[^0-9]/g, '');
+  const localPhone = (req.body.local_phone || '').trim().replace(/[^0-9]/g, '').replace(/^0+/, ''); // מסיר 0 בהתחלה
+  const phone = countryCode + localPhone;
 
   if (!name || name.length < 2) {
     return res.send(adminPage('שגיאה', '<div style="background:#3d1111;padding:16px;border-radius:10px">שם חייב להיות לפחות 2 תווים.</div><a href="/admin/invite" class="btn">← חזור</a>'));
   }
-  if (!phone || !/^[0-9]{10,15}$/.test(phone)) {
+  if (!countryCode || !localPhone || !/^[0-9]{8,15}$/.test(phone)) {
     return res.send(adminPage('שגיאה', '<div style="background:#3d1111;padding:16px;border-radius:10px">מספר טלפון לא תקין.</div><a href="/admin/invite" class="btn">← חזור</a>'));
   }
 

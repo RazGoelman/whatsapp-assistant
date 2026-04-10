@@ -104,8 +104,33 @@ router.get('/invite/:token', (req, res) => {
       <input type="text" name="name" placeholder="ישראל ישראלי" required minlength="2">
 
       <label>מספר טלפון (WhatsApp)</label>
-      <input type="tel" name="phone" placeholder="972501234567" required pattern="[0-9]{10,15}">
-      <p style="font-size: 0.8rem; color: #666;">ללא + וללא מקפים</p>
+      <div style="display:flex;gap:8px">
+        <select name="country_code" style="width:130px;padding:14px;border:1px solid #333;border-radius:10px;background:#1a2a44;color:#fff;font-size:14px">
+          <option value="972">🇮🇱 +972</option>
+          <option value="1">🇺🇸 +1</option>
+          <option value="44">🇬🇧 +44</option>
+          <option value="49">🇩🇪 +49</option>
+          <option value="33">🇫🇷 +33</option>
+          <option value="39">🇮🇹 +39</option>
+          <option value="34">🇪🇸 +34</option>
+          <option value="31">🇳🇱 +31</option>
+          <option value="41">🇨🇭 +41</option>
+          <option value="43">🇦🇹 +43</option>
+          <option value="90">🇹🇷 +90</option>
+          <option value="971">🇦🇪 +971</option>
+          <option value="966">🇸🇦 +966</option>
+          <option value="962">🇯🇴 +962</option>
+          <option value="20">🇪🇬 +20</option>
+          <option value="91">🇮🇳 +91</option>
+          <option value="86">🇨🇳 +86</option>
+          <option value="61">🇦🇺 +61</option>
+          <option value="55">🇧🇷 +55</option>
+          <option value="27">🇿🇦 +27</option>
+          <option value="7">🇷🇺 +7</option>
+        </select>
+        <input type="tel" name="local_phone" placeholder="501234567" required pattern="[0-9]{6,12}" style="flex:1">
+      </div>
+      <p style="font-size: 0.8rem; color: #666;">בחר קידומת והזן מספר מקומי ללא 0 בהתחלה</p>
 
       <button type="submit" class="btn">המשך לתשלום →</button>
     </form>
@@ -121,7 +146,10 @@ router.post('/register/:token', express.urlencoded({ extended: true }), async (r
     `));
   }
 
-  const { name, phone } = req.body;
+  const { name, country_code, local_phone } = req.body;
+  const countryCode = (country_code || '').replace(/[^0-9]/g, '');
+  const localPhone = (local_phone || '').replace(/[^0-9]/g, '').replace(/^0+/, '');
+  const phone = countryCode + localPhone;
 
   // 🔒 Validation
   if (!name || name.length < 2) {
@@ -130,7 +158,7 @@ router.post('/register/:token', express.urlencoded({ extended: true }), async (r
       <a href="/c/invite/${esc(req.params.token)}" class="btn">← חזור</a>
     `));
   }
-  if (!phone || !/^[0-9]{10,15}$/.test(phone)) {
+  if (!countryCode || !localPhone || !/^[0-9]{8,15}$/.test(phone)) {
     return res.status(400).send(customerPage('שגיאה', `
       <div class="error">מספר טלפון לא תקין.</div>
       <a href="/c/invite/${esc(req.params.token)}" class="btn">← חזור</a>
