@@ -99,11 +99,6 @@ async function handleUpdate(intent) {
     if (!event || !event.id)
         return `❌ לא מצאתי אירוע "${intent.targetEvent}" בשבוע הקרוב`;
     const updates = {};
-    if (intent.newTime) {
-        const date = intent.newDate || event.start.split('T')[0];
-        updates.start = buildDateTime(date, intent.newTime);
-        updates.end = buildDateTime(date, addHour(intent.newTime));
-    }
     if (intent.newDate && !intent.newTime) {
         const time = event.start.split('T')[1]?.substring(0, 5) || '09:00';
         const endTime = event.end.split('T')[1]?.substring(0, 5) || addHour(time);
