@@ -59,6 +59,7 @@ async function executeIntent(intent: ParsedIntent): Promise<string> {
     case 'query': return handleQuery(intent);
     case 'delete': return handleDelete(intent);
     case 'update': return handleUpdate(intent);
+    case 'availability': return handleAvailability(intent);
     default: return '🤔 לא הבנתי את הבקשה. נסה שוב, למשל:\n• "קבע פגישה מחר ב-3 עם דני"\n• "מה יש לי היום?"\n• "תבטל את הפגישה עם דני"';
   }
 }
