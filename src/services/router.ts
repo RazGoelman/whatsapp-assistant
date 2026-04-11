@@ -1,5 +1,5 @@
 import { parseIntent, ParsedIntent } from './aiParser';
-import { createEvent, updateEvent, deleteEvent, queryEvents, findEventByName } from './calendar';
+import { createEvent, updateEvent, deleteEvent, queryEvents, findEventByName, findAllEventsByName } from './calendar';
 import { sendWhatsAppMessage } from './whatsapp';
 import { transcribeAudio } from './transcription';
 import { config } from '../config';

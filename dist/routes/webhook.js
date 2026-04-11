@@ -17,6 +17,8 @@ router.get('/webhook', (req, res) => {
         res.status(403).send('Forbidden');
     }
 });
+// Deduplication: track processed message IDs
+const processedMessages = new Set();
 router.post('/webhook', (req, res) => {
     res.status(200).send('OK');
     try {
@@ -30,6 +32,16 @@ router.post('/webhook', (req, res) => {
             return;
         const message = value.messages[0];
         const from = message.from;
+        const messageId = message.id;
+        if (processedMessages.has(messageId)) {
+            console.log(`⏭️ Skipping duplicate message: ${messageId}`);
+            return;
+        }
+        processedMessages.add(messageId);
+        if (processedMessages.size > 200) {
+            const arr = Array.from(processedMessages);
+            arr.slice(0, arr.length - 100).forEach((id) => processedMessages.delete(id));
+        }
         console.log(`📥 Message from ${from}, type: ${message.type}`);
         if (message.type === 'text') {
             (0, router_1.handleIncomingMessage)(from, message.text.body).catch((err) => console.error('❌ Message handler error:', err.message));
