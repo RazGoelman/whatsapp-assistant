@@ -28,7 +28,7 @@ Current time: ${currentTime}
 Timezone: ${config_1.config.timezone}
 
 Return a JSON object with these fields:
-- action: "create" | "update" | "delete" | "query" | "unknown"
+- action: "create" | "update" | "delete" | "query" | "availability" | "unknown"
 - summary: event title (string, optional)
 - date: ISO date string YYYY-MM-DD (optional)
 - startTime: "HH:mm" (optional)
@@ -40,6 +40,24 @@ Return a JSON object with these fields:
 - attendees: array of email addresses (optional)
 - newTime: "HH:mm" for rescheduling (optional)
 - newDate: "YYYY-MM-DD" for rescheduling (optional)
+- recurrence: object for recurring events (optional):
+  - freq: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY"
+  - interval: number (default 1)
+  - count: number of occurrences (optional)
+  - until: end date "YYYY-MM-DD" (optional)
+  - byDay: array of day codes ["MO","TU","WE","TH","FR","SA","SU"] (optional)
+
+Examples for recurring:
+"קבע ישיבת צוות כל יום שני ב-9" -> {"action":"create","summary":"ישיבת צוות","date":"next Monday","startTime":"09:00","endTime":"10:00","recurrence":{"freq":"WEEKLY","byDay":["MO"]}}
+"קבע פגישה כל יום ב-8 בבוקר" -> {"action":"create","summary":"פגישה","date":"tomorrow","startTime":"08:00","endTime":"09:00","recurrence":{"freq":"DAILY"}}
+"קבע ישיבה כל יום שני ורביעי ב-10" -> {"action":"create","summary":"ישיבה","date":"next Monday","startTime":"10:00","endTime":"11:00","recurrence":{"freq":"WEEKLY","byDay":["MO","WE"]}}
+
+Examples for availability:
+"מתי אני פנוי מחר?" -> {"action":"availability","date":"tomorrow"}
+"האם אני פנוי מחר ב-3?" -> {"action":"availability","date":"tomorrow","startTime":"15:00"}
+"מתי אני פנוי ביום שלישי אחהצ?" -> {"action":"availability","date":"next Tuesday","startTime":"12:00","endTime":"20:00"}
+
+- newDate "YYYY-MM-DD" for rescheduling (optional)
 
 Examples:
 "קבע פגישה מחר ב-3 עם דני" → {"action":"create","summary":"פגישה עם דני","date":"tomorrow's date","startTime":"15:00","endTime":"16:00"}

@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startReminders = startReminders;
 exports.startDailySummary = startDailySummary;
+exports.startWeeklySummary = startWeeklySummary;
 const node_cron_1 = __importDefault(require("node-cron"));
 const calendar_1 = require("./calendar");
 const whatsapp_1 = require("./whatsapp");
@@ -82,4 +83,34 @@ function startDailySummary() {
         }
     }, { timezone: config_1.config.timezone });
     console.log('📋 Daily summary cron started (20:00)');
+}
+function startWeeklySummary() {
+    node_cron_1.default.schedule("0 7 * * 0", async () => {
+        try {
+            const now = new Date();
+            let msg = "📋 סיכום שבועי\n";
+            for (let i = 0; i < 7; i++) {
+                const day = new Date(now);
+                day.setDate(day.getDate() + i);
+                const dayStart = new Date(day);
+                dayStart.setHours(0, 0, 0, 0);
+                const dayEnd = new Date(day);
+                dayEnd.setHours(23, 59, 59, 999);
+                const events = await (0, calendar_1.queryEvents)(dayStart.toISOString(), dayEnd.toISOString());
+                msg += "\n📅 " + formatDate(dayStart.toISOString()) + ":\n";
+                if (events.length === 0) {
+                    msg += "אין אירועים\n";
+                }
+                else {
+                    events.forEach((e, idx) => { msg += (idx + 1) + ". " + e.summary + " — " + formatTime(e.start) + "\n"; });
+                }
+            }
+            await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, msg);
+            console.log("Weekly summary sent");
+        }
+        catch (error) {
+            console.error("Weekly summary cron error:", error.message);
+        }
+    }, { timezone: config_1.config.timezone });
+    console.log("Weekly summary cron started (Sunday 07:00)");
 }

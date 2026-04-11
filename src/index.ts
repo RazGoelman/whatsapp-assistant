@@ -1,7 +1,7 @@
 import express from 'express';
 import { config } from './config';
 import webhookRouter from './routes/webhook';
-import { startReminders, startDailySummary } from './services/scheduler';
+import { startReminders, startDailySummary, startWeeklySummary } from './services/scheduler';
 
 const app = express();
 
@@ -21,6 +21,7 @@ app.listen(config.port, () => {
   console.log(`📡 Webhook URL: https://YOUR_DOMAIN/webhook`);
   startReminders();
   startDailySummary();
+  startWeeklySummary();
 });
 
 export default app;

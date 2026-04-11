@@ -19,6 +19,7 @@ export async function createEvent(event: {
   location?: string;
   addMeet?: boolean;
   attendees?: string[];
+  recurrence?: { freq: string; interval?: number; count?: number; until?: string; byDay?: string[] };
 }): Promise<CalendarEvent> {
   const calendar = getCalendar();
 
@@ -41,6 +42,15 @@ export async function createEvent(event: {
 
   if (event.attendees && event.attendees.length > 0) {
     eventBody.attendees = event.attendees.map((email) => ({ email }));
+  }
+
+  if (event.recurrence) {
+    let rule = "RRULE:FREQ=" + event.recurrence.freq;
+    if (event.recurrence.interval && event.recurrence.interval > 1) rule += ";INTERVAL=" + event.recurrence.interval;
+    if (event.recurrence.byDay && event.recurrence.byDay.length) rule += ";BYDAY=" + event.recurrence.byDay.join(",");
+    if (event.recurrence.count) rule += ";COUNT=" + event.recurrence.count;
+    if (event.recurrence.until) rule += ";UNTIL=" + event.recurrence.until.replace(/-/g, "") + "T235959Z";
+    eventBody.recurrence = [rule];
   }
 
   const res = await calendar.events.insert({

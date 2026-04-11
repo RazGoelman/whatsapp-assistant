@@ -6,7 +6,9 @@ const aiParser_1 = require("./aiParser");
 const calendar_1 = require("./calendar");
 const whatsapp_1 = require("./whatsapp");
 const transcription_1 = require("./transcription");
+const locale_1 = require("./locale");
 const config_1 = require("../config");
+const seenUsers = new Set();
 function formatTime(isoString) {
     const d = new Date(isoString);
     return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: config_1.config.timezone });
@@ -20,15 +22,23 @@ function buildDateTime(date, time) {
 }
 async function handleIncomingMessage(from, message) {
     try {
-        console.log(`💬 Processing message from ${from}: ${message}`);
+        if (!seenUsers.has(from)) {
+            seenUsers.add(from);
+            await (0, whatsapp_1.sendWhatsAppMessage)(from, (0, locale_1.getWelcomeMessage)(from));
+        }
+        if ((0, locale_1.isHelpTrigger)(message)) {
+            await (0, whatsapp_1.sendWhatsAppMessage)(from, (0, locale_1.getHelpMenu)(from));
+            return;
+        }
+        console.log("Processing message from " + from + ": " + message);
         const intent = await (0, aiParser_1.parseIntent)(message);
-        console.log(`🧠 Parsed intent:`, JSON.stringify(intent));
+        console.log("Parsed intent: " + JSON.stringify(intent));
         const reply = await executeIntent(intent);
         await (0, whatsapp_1.sendWhatsAppMessage)(from, reply);
     }
     catch (error) {
-        console.error('❌ Error handling message:', error.message);
-        await (0, whatsapp_1.sendWhatsAppMessage)(from, `❌ שגיאה: ${error.message}`);
+        console.error("Error handling message:", error.message);
+        await (0, whatsapp_1.sendWhatsAppMessage)(from, "שגיאה: " + error.message);
     }
 }
 async function handleVoiceMessage(from, mediaId) {
@@ -62,10 +72,19 @@ async function handleCreate(intent) {
         summary: intent.summary, start, end,
         description: intent.description, location: intent.location,
         addMeet: intent.addMeet, attendees: intent.attendees,
+        recurrence: intent.recurrence,
     });
-    let reply = `✅ נוצר אירוע: ${event.summary}\n📅 ${formatDate(event.start)} ${formatTime(event.start)}-${formatTime(event.end)}`;
+    const isRecurring = intent.recurrence?.freq;
+    const recurText = isRecurring ? " חוזר" : "";
+    let reply = "נוצר אירוע" + recurText + ": " + event.summary + "\n📅 " + formatDate(event.start) + " " + formatTime(event.start) + "-" + formatTime(event.end);
+    if (isRecurring) {
+        const freqMap = { DAILY: "כל יום", WEEKLY: "כל שבוע", MONTHLY: "כל חודש", YEARLY: "כל שנה" };
+        reply += "\n🔄 " + (freqMap[intent.recurrence.freq] || intent.recurrence.freq);
+        if (intent.recurrence.byDay?.length)
+            reply += " (" + intent.recurrence.byDay.join(", ") + ")";
+    }
     if (event.meetLink)
-        reply += `\n📹 Google Meet: ${event.meetLink}`;
+        reply += "\n📹 Google Meet: " + event.meetLink;
     return reply;
 }
 async function handleQuery(intent) {
@@ -113,4 +132,37 @@ async function handleUpdate(intent) {
 function addHour(time) {
     const [h, m] = time.split(':').map(Number);
     return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+async function handleAvailability(intent) {
+    const date = intent.date || new Date().toISOString().split("T")[0];
+    const dayStart = date + "T08:00:00";
+    const dayEnd = date + "T20:00:00";
+    const events = await (0, calendar_1.queryEvents)(new Date(dayStart).toISOString(), new Date(dayEnd).toISOString());
+    if (intent.startTime) {
+        const checkTime = intent.startTime;
+        const checkEnd = intent.endTime || addHour(checkTime);
+        const checkStart = buildDateTime(date, checkTime);
+        const checkEndDt = buildDateTime(date, checkEnd);
+        const conflict = events.find((e) => e.start < checkEndDt && e.end > checkStart);
+        if (conflict)
+            return "תפוס — " + conflict.summary + " " + formatTime(conflict.start) + "-" + formatTime(conflict.end);
+        return "פנוי ב-" + formatDate(dayStart) + " " + checkTime;
+    }
+    const busySlots = events.map((e) => ({
+        start: e.start.split("T")[1]?.substring(0, 5) || "00:00",
+        end: e.end.split("T")[1]?.substring(0, 5) || "00:00",
+    })).sort((a, b) => a.start.localeCompare(b.start));
+    const freeSlots = [];
+    let cursor = "08:00";
+    for (const slot of busySlots) {
+        if (slot.start > cursor)
+            freeSlots.push(cursor + "-" + slot.start);
+        if (slot.end > cursor)
+            cursor = slot.end;
+    }
+    if (cursor < "20:00")
+        freeSlots.push(cursor + "-20:00");
+    if (freeSlots.length === 0)
+        return "אין חלונות פנויים ב-" + formatDate(dayStart) + " (08:00-20:00)";
+    return "חלונות פנויים ב-" + formatDate(dayStart) + ":\n" + freeSlots.map((s) => "• " + s).join("\n");
 }

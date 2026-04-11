@@ -21,5 +21,6 @@ app.listen(config_1.config.port, () => {
     console.log(`📡 Webhook URL: https://YOUR_DOMAIN/webhook`);
     (0, scheduler_1.startReminders)();
     (0, scheduler_1.startDailySummary)();
+    (0, scheduler_1.startWeeklySummary)();
 });
 exports.default = app;

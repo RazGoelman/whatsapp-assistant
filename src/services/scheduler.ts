@@ -76,3 +76,27 @@ export function startDailySummary(): void {
   }, { timezone: config.timezone });
   console.log('📋 Daily summary cron started (20:00)');
 }
+
+export function startWeeklySummary(): void {
+  cron.schedule("0 7 * * 0", async () => {
+    try {
+      const now = new Date();
+      let msg = "📋 סיכום שבועי\n";
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(now);
+        day.setDate(day.getDate() + i);
+        const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+        const events = await queryEvents(dayStart.toISOString(), dayEnd.toISOString());
+        msg += "\n📅 " + formatDate(dayStart.toISOString()) + ":\n";
+        if (events.length === 0) { msg += "אין אירועים\n"; }
+        else { events.forEach((e, idx) => { msg += (idx + 1) + ". " + e.summary + " — " + formatTime(e.start) + "\n"; }); }
+      }
+      await sendWhatsAppMessage(config.userPhoneNumber, msg);
+      console.log("Weekly summary sent");
+    } catch (error: any) {
+      console.error("Weekly summary cron error:", error.message);
+    }
+  }, { timezone: config.timezone });
+  console.log("Weekly summary cron started (Sunday 07:00)");
+}
