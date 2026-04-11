@@ -5,6 +5,7 @@ exports.updateEvent = updateEvent;
 exports.deleteEvent = deleteEvent;
 exports.queryEvents = queryEvents;
 exports.findEventByName = findEventByName;
+exports.findAllEventsByName = findAllEventsByName;
 const googleAuth_1 = require("./googleAuth");
 const config_1 = require("../config");
 async function createEvent(event) {
@@ -91,4 +92,11 @@ async function findEventByName(name, daysAhead = 7) {
     const events = await queryEvents(now.toISOString(), future.toISOString());
     const lower = name.toLowerCase();
     return events.find((e) => e.summary.toLowerCase().includes(lower)) || null;
+}
+async function findAllEventsByName(name, daysAhead = 7) {
+    const now = new Date();
+    const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+    const events = await queryEvents(now.toISOString(), future.toISOString());
+    const lower = name.toLowerCase();
+    return events.filter((e) => e.summary.toLowerCase().includes(lower));
 }

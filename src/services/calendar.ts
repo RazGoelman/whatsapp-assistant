@@ -113,3 +113,11 @@ export async function findEventByName(name: string, daysAhead: number = 7): Prom
   const lower = name.toLowerCase();
   return events.find((e) => e.summary.toLowerCase().includes(lower)) || null;
 }
+
+export async function findAllEventsByName(name: string, daysAhead: number = 7): Promise<CalendarEvent[]> {
+  const now = new Date();
+  const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+  const events = await queryEvents(now.toISOString(), future.toISOString());
+  const lower = name.toLowerCase();
+  return events.filter((e) => e.summary.toLowerCase().includes(lower));
+}
