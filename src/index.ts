@@ -1,9 +1,11 @@
 import express from 'express';
 import { config } from './config';
+import webhookRouter from './routes/webhook';
 
 const app = express();
 
 app.use(express.json());
+app.use(webhookRouter);
 
 // Health check
 app.get('/health', (_req, res) => {
