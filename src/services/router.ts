@@ -29,7 +29,8 @@ export async function handleIncomingMessage(from: string, message: string): Prom
     }
     pendingEmails.delete(from);
     const summaryExp = pendingSummary.get(from);
-    if (summaryExp && Date.now() < summaryExp) { pendingSummary.delete(from); await sendWhatsAppMessage(from, "\u23f3 \u05de\u05e1\u05db\u05dd..."); const s = await summarizeMeeting(message); await sendWhatsAppMessage(from, s); return; }
+    if (summaryExp && Date.now() < summaryExp && message.length > 20) { pendingSummary.delete(from); await sendWhatsAppMessage(from, "\u23f3 \u05de\u05e1\u05db\u05dd..."); const s = await summarizeMeeting(message); await sendWhatsAppMessage(from, s); return; }
+    if (summaryExp) pendingSummary.delete(from);
     pendingSummary.delete(from);
     const intent = await parseIntent(message);
     if (intent.needsEmail && intent.inviteeName) { pendingEmails.set(from, { intent, expires: Date.now() + 300000 }); await sendWhatsAppMessage(from, "\u{1f4e7} \u05de\u05d4 \u05d4\u05de\u05d9\u05d9\u05dc \u05e9\u05dc " + intent.inviteeName + "?"); return; }
