@@ -5,6 +5,7 @@ import { transcribeAudio } from "./transcription";
 import { isHelpTrigger, getHelpMenu, getWelcomeMessage } from "./locale";
 import { createNotionPage, queryNotionPages, isNotionConfigured } from "./notion";
 import { addBirthday, getUpcomingBirthdays } from "./birthdays";
+import { createZoomMeeting, isZoomConfigured } from "./zoom";
 import { config } from "../config";
 
 const seenUsers = new Set<string>();

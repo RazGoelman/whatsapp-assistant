@@ -38,5 +38,11 @@ export const config = {
   userPhoneNumber: requireEnv('USER_PHONE_NUMBER'),
   timezone: optionalEnv("TZ", "Asia/Jerusalem"),
   notion: { apiKey: process.env["NOTION_API_KEY"] || "", databaseId: process.env["NOTION_DATABASE_ID"] || "" },
+  zoom: {
+    accountId: process.env["ZOOM_ACCOUNT_ID"] || "",
+    clientId: process.env["ZOOM_CLIENT_ID"] || "",
+    clientSecret: process.env["ZOOM_CLIENT_SECRET"] || "",
+  },
+
   baseUrl: optionalEnv("BASE_URL", "https://YOUR_DOMAIN"),
 };
