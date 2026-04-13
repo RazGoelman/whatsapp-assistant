@@ -74,7 +74,12 @@ async function handleCreate(intent: ParsedIntent): Promise<string> {
   const event = await createEvent({ summary: intent.summary, start: buildDateTime(intent.date, intent.startTime), end: buildDateTime(intent.date, end), description: intent.description, location: intent.location, addMeet: intent.addMeet, attendees: intent.attendees, recurrence: intent.recurrence });
   const isRec = intent.recurrence?.freq;
   let r = "\u2705 \u05e0\u05d5\u05e6\u05e8 \u05d0\u05d9\u05e8\u05d5\u05e2" + (isRec ? " \u05d7\u05d5\u05d6\u05e8" : "") + ": " + event.summary + "\n\u{1f4c5} " + formatDate(event.start) + " " + formatTime(event.start) + "-" + formatTime(event.end);
-  if (intent.location) r += "\n\u{1f4cd} " + intent.location;
+  if (intent.location === "Zoom" && isZoomConfigured()) {
+    try {
+      const zoomLink = await createZoomMeeting(event.summary, event.start);
+      r += "\n\u{1f4f9} Zoom: " + zoomLink;
+    } catch (e: any) { r += "\n\u{1f4cd} Zoom (link failed)"; }
+  } else if (intent.location) r += "\n\u{1f4cd} " + intent.location;
   if (isRec) { const fm: Record<string, string> = { DAILY: "\u05db\u05dc \u05d9\u05d5\u05dd", WEEKLY: "\u05db\u05dc \u05e9\u05d1\u05d5\u05e2", MONTHLY: "\u05db\u05dc \u05d7\u05d5\u05d3\u05e9", YEARLY: "\u05db\u05dc \u05e9\u05e0\u05d4" }; r += "\n\u{1f504} " + (fm[intent.recurrence!.freq] || intent.recurrence!.freq); }
   if (event.meetLink) r += "\n\u{1f4f9} " + event.meetLink;
   return r;

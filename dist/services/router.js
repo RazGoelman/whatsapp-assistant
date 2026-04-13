@@ -9,6 +9,7 @@ const transcription_1 = require("./transcription");
 const locale_1 = require("./locale");
 const notion_1 = require("./notion");
 const birthdays_1 = require("./birthdays");
+const zoom_1 = require("./zoom");
 const config_1 = require("../config");
 const seenUsers = new Set();
 const pendingEmails = new Map();
@@ -115,7 +116,16 @@ async function handleCreate(intent) {
     const event = await (0, calendar_1.createEvent)({ summary: intent.summary, start: buildDateTime(intent.date, intent.startTime), end: buildDateTime(intent.date, end), description: intent.description, location: intent.location, addMeet: intent.addMeet, attendees: intent.attendees, recurrence: intent.recurrence });
     const isRec = intent.recurrence?.freq;
     let r = "\u2705 \u05e0\u05d5\u05e6\u05e8 \u05d0\u05d9\u05e8\u05d5\u05e2" + (isRec ? " \u05d7\u05d5\u05d6\u05e8" : "") + ": " + event.summary + "\n\u{1f4c5} " + formatDate(event.start) + " " + formatTime(event.start) + "-" + formatTime(event.end);
-    if (intent.location)
+    if (intent.location === "Zoom" && (0, zoom_1.isZoomConfigured)()) {
+        try {
+            const zoomLink = await (0, zoom_1.createZoomMeeting)(event.summary, event.start);
+            r += "\n\u{1f4f9} Zoom: " + zoomLink;
+        }
+        catch (e) {
+            r += "\n\u{1f4cd} Zoom (link failed)";
+        }
+    }
+    else if (intent.location)
         r += "\n\u{1f4cd} " + intent.location;
     if (isRec) {
         const fm = { DAILY: "\u05db\u05dc \u05d9\u05d5\u05dd", WEEKLY: "\u05db\u05dc \u05e9\u05d1\u05d5\u05e2", MONTHLY: "\u05db\u05dc \u05d7\u05d5\u05d3\u05e9", YEARLY: "\u05db\u05dc \u05e9\u05e0\u05d4" };
