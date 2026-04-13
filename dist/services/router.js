@@ -48,7 +48,7 @@ async function handleIncomingMessage(from, message) {
         }
         pendingEmails.delete(from);
         const summaryExp = pendingSummary.get(from);
-        if (summaryExp && Date.now() < summaryExp && message.length > 20) {
+        if (summaryExp && Date.now() < summaryExp && message.length > 50 && !/^(קבע|מה יש|תבטל|תזיז|תשנה|מחק|מתי|האם|סכם|לינק|יום הולדת|תרשום|עזרה|\?)/.test(message.trim())) {
             pendingSummary.delete(from);
             await (0, whatsapp_1.sendWhatsAppMessage)(from, "\u23f3 \u05de\u05e1\u05db\u05dd...");
             const s = await (0, aiParser_1.summarizeMeeting)(message);

@@ -29,7 +29,7 @@ export async function handleIncomingMessage(from: string, message: string): Prom
     }
     pendingEmails.delete(from);
     const summaryExp = pendingSummary.get(from);
-    if (summaryExp && Date.now() < summaryExp && message.length > 20) { pendingSummary.delete(from); await sendWhatsAppMessage(from, "\u23f3 \u05de\u05e1\u05db\u05dd..."); const s = await summarizeMeeting(message); await sendWhatsAppMessage(from, s); return; }
+    if (summaryExp && Date.now() < summaryExp && message.length > 50 && !/^(קבע|מה יש|תבטל|תזיז|תשנה|מחק|מתי|האם|סכם|לינק|יום הולדת|תרשום|עזרה|\?)/.test(message.trim())) { pendingSummary.delete(from); await sendWhatsAppMessage(from, "\u23f3 \u05de\u05e1\u05db\u05dd..."); const s = await summarizeMeeting(message); await sendWhatsAppMessage(from, s); return; }
     if (summaryExp) pendingSummary.delete(from);
     pendingSummary.delete(from);
     const intent = await parseIntent(message);
