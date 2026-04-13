@@ -78,7 +78,7 @@ async function handleCreate(intent: ParsedIntent): Promise<string> {
     try {
       const zoomLink = await createZoomMeeting(event.summary, event.start);
       r += "\n\u{1f4f9} Zoom: " + zoomLink;
-    } catch (e: any) { r += "\n\u{1f4cd} Zoom (link failed)"; }
+    } catch (e: any) { console.error("Zoom error:", e.response?.data || e.message); r += "\n\u{1f4cd} Zoom (link failed: " + (e.response?.data?.message || e.message) + ")"; }
   } else if (intent.location) r += "\n\u{1f4cd} " + intent.location;
   if (isRec) { const fm: Record<string, string> = { DAILY: "\u05db\u05dc \u05d9\u05d5\u05dd", WEEKLY: "\u05db\u05dc \u05e9\u05d1\u05d5\u05e2", MONTHLY: "\u05db\u05dc \u05d7\u05d5\u05d3\u05e9", YEARLY: "\u05db\u05dc \u05e9\u05e0\u05d4" }; r += "\n\u{1f504} " + (fm[intent.recurrence!.freq] || intent.recurrence!.freq); }
   if (event.meetLink) r += "\n\u{1f4f9} " + event.meetLink;

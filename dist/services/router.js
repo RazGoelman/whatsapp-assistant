@@ -122,7 +122,8 @@ async function handleCreate(intent) {
             r += "\n\u{1f4f9} Zoom: " + zoomLink;
         }
         catch (e) {
-            r += "\n\u{1f4cd} Zoom (link failed)";
+            console.error("Zoom error:", e.response?.data || e.message);
+            r += "\n\u{1f4cd} Zoom (link failed: " + (e.response?.data?.message || e.message) + ")";
         }
     }
     else if (intent.location)
