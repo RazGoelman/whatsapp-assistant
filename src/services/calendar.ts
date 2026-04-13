@@ -53,12 +53,20 @@ export async function createEvent(event: {
     eventBody.recurrence = [rule];
   }
 
-  const res = await calendar.events.insert({
+  let res;
+  try {
+    res = await calendar.events.insert({
     calendarId,
     requestBody: eventBody,
     conferenceDataVersion: event.addMeet ? 1 : 0,
     sendUpdates: event.attendees?.length ? 'all' : 'none',
   });
+  } catch (err: any) {
+    if (event.addMeet && err.message?.includes("conference")) {
+      delete eventBody.conferenceData;
+      res = await calendar.events.insert({ calendarId, requestBody: eventBody, conferenceDataVersion: 0, sendUpdates: event.attendees?.length ? "all" : "none" });
+    } else throw err;
+  }
 
   const created = res.data;
   return {

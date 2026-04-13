@@ -6,111 +6,109 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.startReminders = startReminders;
 exports.startDailySummary = startDailySummary;
 exports.startWeeklySummary = startWeeklySummary;
+exports.startBirthdayReminders = startBirthdayReminders;
 const node_cron_1 = __importDefault(require("node-cron"));
 const calendar_1 = require("./calendar");
 const whatsapp_1 = require("./whatsapp");
+const birthdays_1 = require("./birthdays");
 const config_1 = require("../config");
-function formatTime(isoString) {
-    const d = new Date(isoString);
-    return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: config_1.config.timezone });
-}
-function formatDate(isoString) {
-    const d = new Date(isoString);
-    return d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: config_1.config.timezone });
-}
+function formatTime(iso) { return new Date(iso).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: config_1.config.timezone }); }
+function formatDate(iso) { return new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: config_1.config.timezone }); }
 const remindedEvents = new Set();
 function startReminders() {
-    node_cron_1.default.schedule('*/5 * * * *', async () => {
+    node_cron_1.default.schedule("*/5 * * * *", async () => {
         try {
             const now = new Date();
-            const inOneHour = new Date(now.getTime() + 65 * 60 * 1000);
-            const in55Min = new Date(now.getTime() + 55 * 60 * 1000);
-            const events = await (0, calendar_1.queryEvents)(in55Min.toISOString(), inOneHour.toISOString());
-            for (const event of events) {
-                if (event.id && !remindedEvents.has(event.id)) {
-                    remindedEvents.add(event.id);
-                    let msg = `⏰ תזכורת: ${event.summary} מתחיל בעוד שעה (${formatTime(event.start)})`;
-                    if (event.meetLink)
-                        msg += `\n📹 ${event.meetLink}`;
-                    await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, msg);
-                    console.log(`⏰ Reminder sent for: ${event.summary}`);
+            const events = await (0, calendar_1.queryEvents)(new Date(now.getTime() + 55 * 60000).toISOString(), new Date(now.getTime() + 65 * 60000).toISOString());
+            for (const e of events) {
+                if (e.id && !remindedEvents.has(e.id)) {
+                    remindedEvents.add(e.id);
+                    let m = "\u23f0 " + e.summary + " \u05d1\u05e2\u05d5\u05d3 \u05e9\u05e2\u05d4 (" + formatTime(e.start) + ")";
+                    if (e.meetLink)
+                        m += "\n\u{1f4f9} " + e.meetLink;
+                    await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, m);
                 }
             }
             if (remindedEvents.size > 100) {
-                const arr = Array.from(remindedEvents);
-                arr.slice(0, arr.length - 50).forEach((id) => remindedEvents.delete(id));
+                const a = Array.from(remindedEvents);
+                a.slice(0, a.length - 50).forEach((id) => remindedEvents.delete(id));
             }
         }
-        catch (error) {
-            console.error('❌ Reminder cron error:', error.message);
+        catch (e) {
+            console.error("Reminder error:", e.message);
         }
     });
-    console.log('⏰ Reminders cron started (every 5 min)');
+    console.log("Reminders started");
 }
 function startDailySummary() {
-    node_cron_1.default.schedule('0 20 * * *', async () => {
+    node_cron_1.default.schedule("0 20 * * *", async () => {
         try {
             const now = new Date();
-            const todayEnd = new Date(now);
-            todayEnd.setHours(23, 59, 59, 999);
-            const todayEvents = await (0, calendar_1.queryEvents)(now.toISOString(), todayEnd.toISOString());
-            const tomorrow = new Date(now);
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            tomorrow.setHours(0, 0, 0, 0);
-            const tomorrowEnd = new Date(tomorrow);
-            tomorrowEnd.setHours(23, 59, 59, 999);
-            const tomorrowEvents = await (0, calendar_1.queryEvents)(tomorrow.toISOString(), tomorrowEnd.toISOString());
-            let msg = '📋 סיכום יומי\n';
-            msg += `\n📅 היום (${formatDate(now.toISOString())}):\n`;
-            if (todayEvents.length === 0) {
-                msg += 'אין עוד אירועים היום.\n';
-            }
-            else {
-                todayEvents.forEach((e, i) => { msg += `${i + 1}. ${e.summary} — ${formatTime(e.start)}\n`; });
-            }
-            msg += `\n📅 מחר (${formatDate(tomorrow.toISOString())}):\n`;
-            if (tomorrowEvents.length === 0) {
-                msg += 'אין אירועים מתוכננים.\n';
-            }
-            else {
-                tomorrowEvents.forEach((e, i) => { msg += `${i + 1}. ${e.summary} — ${formatTime(e.start)}\n`; });
-            }
-            await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, msg);
-            console.log('📋 Daily summary sent');
+            const te = new Date(now);
+            te.setHours(23, 59, 59, 999);
+            const todayEv = await (0, calendar_1.queryEvents)(now.toISOString(), te.toISOString());
+            const tm = new Date(now);
+            tm.setDate(tm.getDate() + 1);
+            tm.setHours(0, 0, 0, 0);
+            const tme = new Date(tm);
+            tme.setHours(23, 59, 59, 999);
+            const tmEv = await (0, calendar_1.queryEvents)(tm.toISOString(), tme.toISOString());
+            let m = "\u{1f4cb} \u05e1\u05d9\u05db\u05d5\u05dd \u05d9\u05d5\u05de\u05d9\n\n\u{1f4c5} " + formatDate(now.toISOString()) + ":\n";
+            if (todayEv.length === 0)
+                m += "\u05d0\u05d9\u05df \u05d0\u05d9\u05e8\u05d5\u05e2\u05d9\u05dd\n";
+            else
+                todayEv.forEach((e, i) => { m += (i + 1) + ". " + e.summary + " \u2014 " + formatTime(e.start) + "\n"; });
+            m += "\n\u{1f4c5} \u05de\u05d7\u05e8 (" + formatDate(tm.toISOString()) + "):\n";
+            if (tmEv.length === 0)
+                m += "\u05d0\u05d9\u05df \u05d0\u05d9\u05e8\u05d5\u05e2\u05d9\u05dd\n";
+            else
+                tmEv.forEach((e, i) => { m += (i + 1) + ". " + e.summary + " \u2014 " + formatTime(e.start) + "\n"; });
+            await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, m);
         }
-        catch (error) {
-            console.error('❌ Daily summary cron error:', error.message);
+        catch (e) {
+            console.error("Daily error:", e.message);
         }
     }, { timezone: config_1.config.timezone });
-    console.log('📋 Daily summary cron started (20:00)');
+    console.log("Daily summary started");
 }
 function startWeeklySummary() {
     node_cron_1.default.schedule("0 7 * * 0", async () => {
         try {
             const now = new Date();
-            let msg = "📋 סיכום שבועי\n";
+            let m = "\u{1f4cb} \u05e1\u05d9\u05db\u05d5\u05dd \u05e9\u05d1\u05d5\u05e2\u05d9\n";
             for (let i = 0; i < 7; i++) {
-                const day = new Date(now);
-                day.setDate(day.getDate() + i);
-                const dayStart = new Date(day);
-                dayStart.setHours(0, 0, 0, 0);
-                const dayEnd = new Date(day);
-                dayEnd.setHours(23, 59, 59, 999);
-                const events = await (0, calendar_1.queryEvents)(dayStart.toISOString(), dayEnd.toISOString());
-                msg += "\n📅 " + formatDate(dayStart.toISOString()) + ":\n";
-                if (events.length === 0) {
-                    msg += "אין אירועים\n";
-                }
-                else {
-                    events.forEach((e, idx) => { msg += (idx + 1) + ". " + e.summary + " — " + formatTime(e.start) + "\n"; });
-                }
+                const d = new Date(now);
+                d.setDate(d.getDate() + i);
+                const ds = new Date(d);
+                ds.setHours(0, 0, 0, 0);
+                const de = new Date(d);
+                de.setHours(23, 59, 59, 999);
+                const ev = await (0, calendar_1.queryEvents)(ds.toISOString(), de.toISOString());
+                m += "\n\u{1f4c5} " + formatDate(ds.toISOString()) + ":\n";
+                if (ev.length === 0)
+                    m += "\u05d0\u05d9\u05df \u05d0\u05d9\u05e8\u05d5\u05e2\u05d9\u05dd\n";
+                else
+                    ev.forEach((e, idx) => { m += (idx + 1) + ". " + e.summary + " \u2014 " + formatTime(e.start) + "\n"; });
             }
-            await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, msg);
-            console.log("Weekly summary sent");
+            await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, m);
         }
-        catch (error) {
-            console.error("Weekly summary cron error:", error.message);
+        catch (e) {
+            console.error("Weekly error:", e.message);
         }
     }, { timezone: config_1.config.timezone });
-    console.log("Weekly summary cron started (Sunday 07:00)");
+    console.log("Weekly summary started");
+}
+function startBirthdayReminders() {
+    node_cron_1.default.schedule("0 8 * * *", async () => {
+        try {
+            for (const b of (0, birthdays_1.getTodayBirthdays)())
+                await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, "\u{1f389} \u05d4\u05d9\u05d5\u05dd \u05d9\u05d5\u05dd \u05d4\u05d4\u05d5\u05dc\u05d3\u05ea \u05e9\u05dc " + b.name + "!");
+            for (const b of (0, birthdays_1.getTomorrowBirthdays)())
+                await (0, whatsapp_1.sendWhatsAppMessage)(config_1.config.userPhoneNumber, "\u{1f382} \u05de\u05d7\u05e8 \u05d9\u05d5\u05dd \u05d4\u05d4\u05d5\u05dc\u05d3\u05ea \u05e9\u05dc " + b.name + "!");
+        }
+        catch (e) {
+            console.error("Birthday error:", e.message);
+        }
+    }, { timezone: config_1.config.timezone });
+    console.log("Birthday reminders started");
 }

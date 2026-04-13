@@ -1,27 +1,17 @@
-import express from 'express';
-import { config } from './config';
-import webhookRouter from './routes/webhook';
-import { startReminders, startDailySummary, startWeeklySummary } from './services/scheduler';
-
+import express from "express";
+import { config } from "./config";
+import webhookRouter from "./routes/webhook";
+import bookingRouter from "./routes/booking";
+import { startReminders, startDailySummary, startWeeklySummary, startBirthdayReminders } from "./services/scheduler";
 const app = express();
-
 app.use(express.json());
 app.use(webhookRouter);
-
-app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.get('/', (_req, res) => {
-  res.send('WhatsApp Calendar Bot is running!');
-});
-
+app.use(bookingRouter);
+app.get("/health", (_req, res) => { res.status(200).json({ status: "ok" }); });
+app.get("/", (_req, res) => { res.send("WhatsApp Calendar Bot is running!"); });
 app.listen(config.port, () => {
-  console.log(`🚀 WhatsApp Calendar Bot running on port ${config.port}`);
-  console.log(`📡 Webhook URL: https://YOUR_DOMAIN/webhook`);
-  startReminders();
-  startDailySummary();
-  startWeeklySummary();
+  console.log("Bot running on port " + config.port);
+  console.log("Booking: " + config.baseUrl + "/book");
+  startReminders(); startDailySummary(); startWeeklySummary(); startBirthdayReminders();
 });
-
 export default app;

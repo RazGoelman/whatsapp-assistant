@@ -36,5 +36,7 @@ export const config = {
   // App
   port: parseInt(optionalEnv('PORT', '3000'), 10),
   userPhoneNumber: requireEnv('USER_PHONE_NUMBER'),
-  timezone: optionalEnv('TZ', 'Asia/Jerusalem'),
+  timezone: optionalEnv("TZ", "Asia/Jerusalem"),
+  notion: { apiKey: process.env["NOTION_API_KEY"] || "", databaseId: process.env["NOTION_DATABASE_ID"] || "" },
+  baseUrl: optionalEnv("BASE_URL", "https://YOUR_DOMAIN"),
 };

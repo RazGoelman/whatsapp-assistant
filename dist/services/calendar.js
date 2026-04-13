@@ -40,12 +40,23 @@ async function createEvent(event) {
             rule += ";UNTIL=" + event.recurrence.until.replace(/-/g, "") + "T235959Z";
         eventBody.recurrence = [rule];
     }
-    const res = await calendar.events.insert({
-        calendarId: googleAuth_1.calendarId,
-        requestBody: eventBody,
-        conferenceDataVersion: event.addMeet ? 1 : 0,
-        sendUpdates: event.attendees?.length ? 'all' : 'none',
-    });
+    let res;
+    try {
+        res = await calendar.events.insert({
+            calendarId: googleAuth_1.calendarId,
+            requestBody: eventBody,
+            conferenceDataVersion: event.addMeet ? 1 : 0,
+            sendUpdates: event.attendees?.length ? 'all' : 'none',
+        });
+    }
+    catch (err) {
+        if (event.addMeet && err.message?.includes("conference")) {
+            delete eventBody.conferenceData;
+            res = await calendar.events.insert({ calendarId: googleAuth_1.calendarId, requestBody: eventBody, conferenceDataVersion: 0, sendUpdates: event.attendees?.length ? "all" : "none" });
+        }
+        else
+            throw err;
+    }
     const created = res.data;
     return {
         id: created.id || undefined,
