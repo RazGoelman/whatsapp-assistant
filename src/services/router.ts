@@ -22,6 +22,8 @@ export async function handleIncomingMessage(from: string, message: string): Prom
   try {
     if (!seenUsers.has(from)) { seenUsers.add(from); await sendWhatsAppMessage(from, getWelcomeMessage(from)); }
     if (isHelpTrigger(message)) { await sendWhatsAppMessage(from, getHelpMenu(from)); return; }
+    const lm = message.trim().toLowerCase();
+    if (lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05ea" || lm === "reminders") { const r = await handleReminderQuery(from); await sendWhatsAppMessage(from, r); return; }
     const pending = pendingEmails.get(from);
     if (pending && Date.now() < pending.expires) {
       const msg = message.trim().toLowerCase();

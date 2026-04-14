@@ -28,6 +28,12 @@ async function handleIncomingMessage(from, message) {
             await (0, whatsapp_1.sendWhatsAppMessage)(from, (0, locale_1.getHelpMenu)(from));
             return;
         }
+        const lm = message.trim().toLowerCase();
+        if (lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05ea" || lm === "reminders") {
+            const r = await handleReminderQuery(from);
+            await (0, whatsapp_1.sendWhatsAppMessage)(from, r);
+            return;
+        }
         const pending = pendingEmails.get(from);
         if (pending && Date.now() < pending.expires) {
             const msg = message.trim().toLowerCase();
