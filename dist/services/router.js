@@ -30,7 +30,7 @@ async function handleIncomingMessage(from, message) {
             return;
         }
         const lm = message.trim().toLowerCase();
-        if (lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05ea" || lm === "reminders") {
+        if (lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05ea" || lm === "reminders" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea \u05e9\u05dc\u05d9") {
             const r = await handleReminderQuery(from);
             await (0, whatsapp_1.sendWhatsAppMessage)(from, r);
             return;
@@ -66,6 +66,16 @@ async function handleIncomingMessage(from, message) {
         if (summaryExp)
             pendingSummary.delete(from);
         pendingSummary.delete(from);
+        if (message.trim().startsWith("\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9") || message.trim().toLowerCase().startsWith("remind me")) {
+            const reminderIntent = await (0, aiParser_1.parseIntent)("REMINDER: " + message);
+            if (reminderIntent.action !== "reminder_add") {
+                reminderIntent.action = "reminder_add";
+                reminderIntent.reminderText = reminderIntent.summary || message.replace(/\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9/g, "").trim();
+            }
+            const reply = await executeIntent(reminderIntent, from);
+            await (0, whatsapp_1.sendWhatsAppMessage)(from, reply);
+            return;
+        }
         const intent = await (0, aiParser_1.parseIntent)(message);
         if (intent.needsEmail && intent.inviteeName) {
             pendingEmails.set(from, { intent, expires: Date.now() + 300000 });

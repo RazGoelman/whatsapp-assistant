@@ -23,7 +23,7 @@ export async function handleIncomingMessage(from: string, message: string): Prom
     if (!seenUsers.has(from)) { seenUsers.add(from); await sendWhatsAppMessage(from, getWelcomeMessage(from)); }
     if (isHelpTrigger(message)) { await sendWhatsAppMessage(from, getHelpMenu(from)); return; }
     const lm = message.trim().toLowerCase();
-    if (lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05ea" || lm === "reminders") { const r = await handleReminderQuery(from); await sendWhatsAppMessage(from, r); return; }
+    if (lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05ea" || lm === "reminders" || lm === "\u05ea\u05d6\u05db\u05d5\u05e8\u05d5\u05ea \u05e9\u05dc\u05d9") { const r = await handleReminderQuery(from); await sendWhatsAppMessage(from, r); return; }
     const pending = pendingEmails.get(from);
     if (pending && Date.now() < pending.expires) {
       const msg = message.trim().toLowerCase();
@@ -36,6 +36,16 @@ export async function handleIncomingMessage(from: string, message: string): Prom
     if (summaryExp && Date.now() < summaryExp && message.length > 50 && !/^(קבע|מה יש|תבטל|תזיז|תשנה|מחק|מתי|האם|סכם|לינק|יום הולדת|תרשום|עזרה|\?)/.test(message.trim())) { pendingSummary.delete(from); await sendWhatsAppMessage(from, "\u23f3 \u05de\u05e1\u05db\u05dd..."); const s = await summarizeMeeting(message); await sendWhatsAppMessage(from, s); return; }
     if (summaryExp) pendingSummary.delete(from);
     pendingSummary.delete(from);
+    if (message.trim().startsWith("\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9") || message.trim().toLowerCase().startsWith("remind me")) {
+      const reminderIntent = await parseIntent("REMINDER: " + message);
+      if (reminderIntent.action !== "reminder_add") {
+        reminderIntent.action = "reminder_add";
+        reminderIntent.reminderText = reminderIntent.summary || message.replace(/\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9/g, "").trim();
+      }
+      const reply = await executeIntent(reminderIntent, from);
+      await sendWhatsAppMessage(from, reply);
+      return;
+    }
     const intent = await parseIntent(message);
     if (intent.needsEmail && intent.inviteeName) { pendingEmails.set(from, { intent, expires: Date.now() + 300000 }); await sendWhatsAppMessage(from, "\u{1f4e7} \u05de\u05d4 \u05d4\u05de\u05d9\u05d9\u05dc \u05e9\u05dc " + intent.inviteeName + "?"); return; }
     const reply = await executeIntent(intent, from);
