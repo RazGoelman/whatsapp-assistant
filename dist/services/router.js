@@ -10,6 +10,7 @@ const locale_1 = require("./locale");
 const notion_1 = require("./notion");
 const birthdays_1 = require("./birthdays");
 const zoom_1 = require("./zoom");
+const customReminders_1 = require("./customReminders");
 const config_1 = require("../config");
 const seenUsers = new Set();
 const pendingEmails = new Map();
@@ -71,7 +72,7 @@ async function handleIncomingMessage(from, message) {
             await (0, whatsapp_1.sendWhatsAppMessage)(from, "\u{1f4e7} \u05de\u05d4 \u05d4\u05de\u05d9\u05d9\u05dc \u05e9\u05dc " + intent.inviteeName + "?");
             return;
         }
-        const reply = await executeIntent(intent);
+        const reply = await executeIntent(intent, from);
         if (intent.action === "meeting_summary")
             pendingSummary.set(from, Date.now() + 600000);
         await (0, whatsapp_1.sendWhatsAppMessage)(from, reply);
@@ -99,7 +100,7 @@ async function handleVoiceMessage(from, mediaId) {
         await (0, whatsapp_1.sendWhatsAppMessage)(from, "\u274c \u05dc\u05d0 \u05d4\u05e6\u05dc\u05d7\u05ea\u05d9 \u05dc\u05ea\u05de\u05dc\u05dc");
     }
 }
-async function executeIntent(intent) {
+async function executeIntent(intent, from = "") {
     switch (intent.action) {
         case "create": return handleCreate(intent);
         case "query": return handleQuery(intent);
@@ -242,5 +243,28 @@ async function handleBirthdayQuery() {
     const months = ["", "\u05d9\u05e0\u05d5\u05d0\u05e8", "\u05e4\u05d1\u05e8\u05d5\u05d0\u05e8", "\u05de\u05e8\u05e5", "\u05d0\u05e4\u05e8\u05d9\u05dc", "\u05de\u05d0\u05d9", "\u05d9\u05d5\u05e0\u05d9", "\u05d9\u05d5\u05dc\u05d9", "\u05d0\u05d5\u05d2\u05d5\u05e1\u05d8", "\u05e1\u05e4\u05d8\u05de\u05d1\u05e8", "\u05d0\u05d5\u05e7\u05d8\u05d5\u05d1\u05e8", "\u05e0\u05d5\u05d1\u05de\u05d1\u05e8", "\u05d3\u05e6\u05de\u05d1\u05e8"];
     let r = "\u{1f382} \u05d9\u05de\u05d9 \u05d4\u05d5\u05dc\u05d3\u05ea \u05e7\u05e8\u05d5\u05d1\u05d9\u05dd:\n";
     upcoming.forEach((b) => { const [mm, dd] = b.date.split("-"); r += "\n\u2022 " + b.name + " \u2014 " + parseInt(dd) + " \u05d1" + months[parseInt(mm)]; });
+    return r;
+}
+async function handleReminderAdd(intent, from) {
+    if (!intent.reminderText || !intent.reminderDate || !intent.reminderTime)
+        return "❌ חסרים פרטים. נסה: תזכיר לי לקנות חלב מחר ב-10";
+    const dateTime = intent.reminderDate + "T" + intent.reminderTime + ":00";
+    const r = (0, customReminders_1.addReminder)(intent.reminderText, dateTime, from);
+    return "⏰ תזכורת נוספה: \"" + r.text + "\" — " + formatDate(r.dateTime) + " " + formatTime(r.dateTime);
+}
+async function handleReminderQuery(from) {
+    const today = (0, customReminders_1.getTodayReminders)(from);
+    const all = (0, customReminders_1.getAllActiveReminders)(from);
+    if (all.length === 0)
+        return "📋 אין תזכורות פעילות";
+    if (today.length > 0) {
+        let r = "📋 תזכורות להיום:\n";
+        today.forEach((t, i) => { r += "\n" + (i + 1) + ". " + t.text + " — " + formatTime(t.dateTime); });
+        if (all.length > today.length)
+            r += "\n\n+ עוד " + (all.length - today.length) + " תזכורות עתידיות";
+        return r;
+    }
+    let r = "📋 תזכורות פעילות:\n";
+    all.forEach((t, i) => { r += "\n" + (i + 1) + ". " + t.text + " — " + formatDate(t.dateTime) + " " + formatTime(t.dateTime); });
     return r;
 }

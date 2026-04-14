@@ -38,7 +38,7 @@ export async function handleIncomingMessage(from: string, message: string): Prom
     pendingSummary.delete(from);
     const intent = await parseIntent(message);
     if (intent.needsEmail && intent.inviteeName) { pendingEmails.set(from, { intent, expires: Date.now() + 300000 }); await sendWhatsAppMessage(from, "\u{1f4e7} \u05de\u05d4 \u05d4\u05de\u05d9\u05d9\u05dc \u05e9\u05dc " + intent.inviteeName + "?"); return; }
-    const reply = await executeIntent(intent);
+    const reply = await executeIntent(intent, from);
     if (intent.action === "meeting_summary") pendingSummary.set(from, Date.now() + 600000);
     await sendWhatsAppMessage(from, reply);
   } catch (error: any) { await sendWhatsAppMessage(from, "\u274c \u05e9\u05d2\u05d9\u05d0\u05d4: " + error.message); }
@@ -54,7 +54,7 @@ export async function handleVoiceMessage(from: string, mediaId: string): Promise
   } catch (e: any) { await sendWhatsAppMessage(from, "\u274c \u05dc\u05d0 \u05d4\u05e6\u05dc\u05d7\u05ea\u05d9 \u05dc\u05ea\u05de\u05dc\u05dc"); }
 }
 
-async function executeIntent(intent: ParsedIntent): Promise<string> {
+async function executeIntent(intent: ParsedIntent, from: string = ""): Promise<string> {
   switch (intent.action) {
     case "create": return handleCreate(intent);
     case "query": return handleQuery(intent);
@@ -165,5 +165,26 @@ async function handleBirthdayQuery(): Promise<string> {
   const months = ["","\u05d9\u05e0\u05d5\u05d0\u05e8","\u05e4\u05d1\u05e8\u05d5\u05d0\u05e8","\u05de\u05e8\u05e5","\u05d0\u05e4\u05e8\u05d9\u05dc","\u05de\u05d0\u05d9","\u05d9\u05d5\u05e0\u05d9","\u05d9\u05d5\u05dc\u05d9","\u05d0\u05d5\u05d2\u05d5\u05e1\u05d8","\u05e1\u05e4\u05d8\u05de\u05d1\u05e8","\u05d0\u05d5\u05e7\u05d8\u05d5\u05d1\u05e8","\u05e0\u05d5\u05d1\u05de\u05d1\u05e8","\u05d3\u05e6\u05de\u05d1\u05e8"];
   let r = "\u{1f382} \u05d9\u05de\u05d9 \u05d4\u05d5\u05dc\u05d3\u05ea \u05e7\u05e8\u05d5\u05d1\u05d9\u05dd:\n";
   upcoming.forEach((b) => { const [mm, dd] = b.date.split("-"); r += "\n\u2022 " + b.name + " \u2014 " + parseInt(dd) + " \u05d1" + months[parseInt(mm)]; });
+  return r;
+}
+
+async function handleReminderAdd(intent: ParsedIntent, from: string): Promise<string> {
+  if (!intent.reminderText || !intent.reminderDate || !intent.reminderTime) return "❌ חסרים פרטים. נסה: תזכיר לי לקנות חלב מחר ב-10";
+  const dateTime = intent.reminderDate + "T" + intent.reminderTime + ":00";
+  const r = addReminder(intent.reminderText, dateTime, from);
+  return "⏰ תזכורת נוספה: \"" + r.text + "\" — " + formatDate(r.dateTime) + " " + formatTime(r.dateTime);
+}
+async function handleReminderQuery(from: string): Promise<string> {
+  const today = getTodayReminders(from);
+  const all = getAllActiveReminders(from);
+  if (all.length === 0) return "📋 אין תזכורות פעילות";
+  if (today.length > 0) {
+    let r = "📋 תזכורות להיום:\n";
+    today.forEach((t, i) => { r += "\n" + (i + 1) + ". " + t.text + " — " + formatTime(t.dateTime); });
+    if (all.length > today.length) r += "\n\n+ עוד " + (all.length - today.length) + " תזכורות עתידיות";
+    return r;
+  }
+  let r = "📋 תזכורות פעילות:\n";
+  all.forEach((t, i) => { r += "\n" + (i + 1) + ". " + t.text + " — " + formatDate(t.dateTime) + " " + formatTime(t.dateTime); });
   return r;
 }
