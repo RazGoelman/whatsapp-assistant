@@ -67,12 +67,12 @@ async function handleIncomingMessage(from, message) {
             pendingSummary.delete(from);
         pendingSummary.delete(from);
         if (message.trim().startsWith("\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9") || message.trim().toLowerCase().startsWith("remind me")) {
-            const reminderIntent = await (0, aiParser_1.parseIntent)("REMINDER: " + message);
-            if (reminderIntent.action !== "reminder_add") {
-                reminderIntent.action = "reminder_add";
-                reminderIntent.reminderText = reminderIntent.summary || message.replace(/\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9/g, "").trim();
-            }
-            const reply = await executeIntent(reminderIntent, from);
+            const parsed = await (0, aiParser_1.parseIntent)(message);
+            parsed.action = "reminder_add";
+            parsed.reminderText = parsed.summary || parsed.description || message.replace(/\u05ea\u05d6\u05db\u05d9\u05e8 \u05dc\u05d9/g, "").replace(/remind me/gi, "").trim();
+            parsed.reminderDate = parsed.reminderDate || parsed.date || new Date().toISOString().split("T")[0];
+            parsed.reminderTime = parsed.reminderTime || parsed.startTime || "09:00";
+            const reply = await executeIntent(parsed, from);
             await (0, whatsapp_1.sendWhatsAppMessage)(from, reply);
             return;
         }
