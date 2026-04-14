@@ -7,10 +7,12 @@ exports.startReminders = startReminders;
 exports.startDailySummary = startDailySummary;
 exports.startWeeklySummary = startWeeklySummary;
 exports.startBirthdayReminders = startBirthdayReminders;
+exports.startCustomReminders = startCustomReminders;
 const node_cron_1 = __importDefault(require("node-cron"));
 const calendar_1 = require("./calendar");
 const whatsapp_1 = require("./whatsapp");
 const birthdays_1 = require("./birthdays");
+const customReminders_1 = require("./customReminders");
 const config_1 = require("../config");
 function formatTime(iso) { return new Date(iso).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: config_1.config.timezone }); }
 function formatDate(iso) { return new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: config_1.config.timezone }); }
@@ -111,4 +113,19 @@ function startBirthdayReminders() {
         }
     }, { timezone: config_1.config.timezone });
     console.log("Birthday reminders started");
+}
+function startCustomReminders() {
+    node_cron_1.default.schedule("* * * * *", async () => {
+        try {
+            const pending = (0, customReminders_1.getPendingReminders)();
+            for (const r of pending) {
+                await (0, whatsapp_1.sendWhatsAppMessage)(r.from, "\u{1f514} \u05ea\u05d6\u05db\u05d5\u05e8\u05ea: " + r.text);
+                (0, customReminders_1.markReminderSent)(r.id);
+            }
+        }
+        catch (e) {
+            console.error("Custom reminder error:", e.message);
+        }
+    });
+    console.log("Custom reminders started (every minute)");
 }

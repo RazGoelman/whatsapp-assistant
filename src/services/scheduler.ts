@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { queryEvents } from "./calendar";
 import { sendWhatsAppMessage } from "./whatsapp";
 import { getTodayBirthdays, getTomorrowBirthdays } from "./birthdays";
+import { getPendingReminders, markReminderSent } from "./customReminders";
 import { config } from "../config";
 function formatTime(iso: string): string { return new Date(iso).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: config.timezone }); }
 function formatDate(iso: string): string { return new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: config.timezone }); }
@@ -45,4 +46,17 @@ export function startBirthdayReminders(): void {
       for (const b of getTomorrowBirthdays()) await sendWhatsAppMessage(config.userPhoneNumber, "\u{1f382} \u05de\u05d7\u05e8 \u05d9\u05d5\u05dd \u05d4\u05d4\u05d5\u05dc\u05d3\u05ea \u05e9\u05dc " + b.name + "!");
     } catch (e: any) { console.error("Birthday error:", e.message); }
   }, { timezone: config.timezone }); console.log("Birthday reminders started");
+}
+
+export function startCustomReminders(): void {
+  cron.schedule("* * * * *", async () => {
+    try {
+      const pending = getPendingReminders();
+      for (const r of pending) {
+        await sendWhatsAppMessage(r.from, "\u{1f514} \u05ea\u05d6\u05db\u05d5\u05e8\u05ea: " + r.text);
+        markReminderSent(r.id);
+      }
+    } catch (e: any) { console.error("Custom reminder error:", e.message); }
+  });
+  console.log("Custom reminders started (every minute)");
 }

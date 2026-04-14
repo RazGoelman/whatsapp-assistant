@@ -105,6 +105,8 @@ async function executeIntent(intent) {
         case "birthday_add": return handleBirthdayAdd(intent);
         case "birthday_query": return handleBirthdayQuery();
         case "meeting_summary": return "\u{1f4dd} \u05e9\u05dc\u05d7 \u05ea\u05d5\u05db\u05df \u05d4\u05e4\u05d2\u05d9\u05e9\u05d4 (\u05d8\u05e7\u05e1\u05d8/\u05d4\u05e7\u05dc\u05d8\u05d4)";
+        case "reminder_add": return handleReminderAdd(intent, from);
+        case "reminder_query": return handleReminderQuery(from);
         case "booking_link": return "\u{1f4c5} \u05d4\u05dc\u05d9\u05e0\u05e7 \u05e9\u05dc\u05da:\n" + config_1.config.baseUrl + "/book";
         default: return "\u{1f914} \u05dc\u05d0 \u05d4\u05d1\u05e0\u05ea\u05d9. \u05e9\u05dc\u05d7 ? \u05dc\u05e2\u05d6\u05e8\u05d4";
     }

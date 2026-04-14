@@ -3,11 +3,12 @@ import { config } from "../config";
 const openai = new OpenAI({ apiKey: config.openai.apiKey });
 export interface RecurrenceInfo { freq: string; interval?: number; count?: number; until?: string; byDay?: string[]; }
 export interface ParsedIntent {
-  action: "create" | "update" | "delete" | "query" | "availability" | "notion_create" | "notion_query" | "birthday_add" | "birthday_query" | "meeting_summary" | "booking_link" | "unknown";
+  action: "create" | "update" | "delete" | "query" | "availability" | "notion_create" | "notion_query" | "birthday_add" | "birthday_query" | "meeting_summary" | "booking_link" | "reminder_add" | "reminder_query" | "unknown";
   summary?: string; date?: string; startTime?: string; endTime?: string; description?: string; location?: string;
   targetEvent?: string; addMeet?: boolean; attendees?: string[]; newTime?: string; newDate?: string;
   recurrence?: RecurrenceInfo; notionTitle?: string; notionContent?: string;
   birthdayName?: string; birthdayDate?: string; needsEmail?: boolean; inviteeName?: string;
+  reminderText?: string; reminderDate?: string; reminderTime?: string;
 }
 export async function parseIntent(message: string): Promise<ParsedIntent> {
   const now = new Date();

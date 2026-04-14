@@ -21,5 +21,6 @@ app.listen(config_1.config.port, () => {
     (0, scheduler_1.startDailySummary)();
     (0, scheduler_1.startWeeklySummary)();
     (0, scheduler_1.startBirthdayReminders)();
+    (0, scheduler_1.startCustomReminders)();
 });
 exports.default = app;
